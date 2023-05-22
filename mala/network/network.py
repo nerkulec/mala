@@ -7,6 +7,23 @@ import torch.nn.functional as functional
 
 from mala.common.parameters import Parameters
 from mala.common.parallelizer import printout
+
+
+from dgl import DGLGraph
+import dgl
+from torch import Tensor
+
+from se3_transformer.model.basis import get_basis, update_basis_with_fused
+from se3_transformer.model.layers.attention import AttentionBlockSE3
+
+from se3_transformer.model.layers.convolution import ConvSE3, ConvSE3FuseLevel
+from se3_transformer.model.layers.norm import NormSE3
+from se3_transformer.model.layers.pooling import GPooling
+from se3_transformer.runtime.utils import str2bool
+from se3_transformer.model.fiber import Fiber
+from se3_transformer.model.transformer import Sequential, get_populated_edge_features
+
+
 try:
     import horovod.torch as hvd
 except ModuleNotFoundError:
@@ -595,3 +612,93 @@ class PositionalEncoding(nn.Module):
         x = x.unsqueeze(dim=1)
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
+
+
+
+class SE3Transformer(Network):
+    """Initialize this network as a SE(3)-Equivariant transformer graph neural network."""
+
+    def __init__(self, params):
+        super(SE3Transformer, self).__init__(params)
+        self.hidden_size = params.layer_sizes[1]
+        self.ldos_size = params.ldos_grid_size
+
+        input_fiber  = Fiber({'0': 1})
+        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+        ldos_fiber   = Fiber({'0': self.ldos_size})
+        force_fiber  = Fiber({'0': 1, '1': 1})
+        edge_fiber   = Fiber({})
+
+        self.se3_block_input = AttentionBlockSE3(
+            fiber_in=input_fiber,
+            fiber_out=hidden_fiber,
+            fiber_edge=edge_fiber,
+            num_heads=1,
+            channels_div=1,
+            max_degree=1,
+            fuse_level=ConvSE3FuseLevel.FULL,
+            low_memory=True,
+        )
+        self.se3_block_hidden = AttentionBlockSE3(
+            fiber_in=hidden_fiber,
+            fiber_out=hidden_fiber,
+            fiber_edge=edge_fiber,
+            num_heads=1,
+            channels_div=1,
+            max_degree=1,
+            fuse_level=ConvSE3FuseLevel.FULL,
+            low_memory=True,
+        )
+        self.se3_block_ldos = AttentionBlockSE3(
+            fiber_in=hidden_fiber,
+            fiber_out=ldos_fiber,
+            fiber_edge=edge_fiber,
+            num_heads=1,
+            channels_div=1,
+            max_degree=1,
+            fuse_level=ConvSE3FuseLevel.FULL,
+            low_memory=True,
+        )
+        self.to(self.params._configuration["device"])
+
+    def forward(self, ion_graph: DGLGraph, grid_graph: DGLGraph, ion_basis=None, grid_basis=None):
+        n_ions = ion_graph.number_of_nodes()
+        n_grid = grid_graph.number_of_nodes()-n_ions
+        ion_basis = ion_basis or get_basis(
+            ion_graph.edata['rel_pos'], max_degree=1, compute_gradients=False,
+            use_pad_trick=False, amp=torch.is_autocast_enabled()
+        )
+        ion_basis = update_basis_with_fused(
+            ion_basis, max_degree=1, use_pad_trick=False, fully_fused=True
+        )
+        grid_basis = grid_basis or get_basis(
+            grid_graph.edata['rel_pos'], max_degree=1, compute_gradients=False,
+            use_pad_trick=False, amp=torch.is_autocast_enabled()
+        )
+        grid_basis = update_basis_with_fused(
+            grid_basis, max_degree=1, use_pad_trick=False, fully_fused=True
+        )
+
+        ion_edge_features = get_populated_edge_features(ion_graph.edata['rel_pos'], None)
+        grid_edge_features = get_populated_edge_features(grid_graph.edata['rel_pos'], None)
+        node_features = self.se3_block_input(
+            {'0': ion_graph.ndata['atomic_number']}, ion_edge_features, graph=ion_graph, basis=ion_basis
+        )
+        graph_embedding = self.se3_block_hidden(
+            node_features, ion_edge_features, graph=ion_graph, basis=ion_basis
+        )
+        graph_embedding_ex = {
+            '0':torch.cat([
+                graph_embedding['0'],
+                torch.zeros((n_grid, self.hidden_size, 1), dtype=torch.float32, device=ion_graph.device)
+            ]),
+            '1':torch.cat([
+                graph_embedding['1'],
+                torch.zeros((n_grid, self.hidden_size, 3), dtype=torch.float32, device=ion_graph.device)
+            ])
+        }
+        ldos_pred = self.se3_block_ldos(
+            graph_embedding_ex, grid_edge_features, graph=grid_graph, basis=grid_basis
+        )
+        return ldos_pred['0'].squeeze(-1)[ion_graph.number_of_nodes():]
+

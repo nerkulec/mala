@@ -420,7 +420,7 @@ class ParametersTargets(ParametersBase):
         Number of points in the energy grid that is used to calculate the
         (L)DOS.
 
-    ldos_gridsize : float
+    ldos_gridsize : int
         Gridsize of the LDOS.
 
     ldos_gridspacing_ev: float
