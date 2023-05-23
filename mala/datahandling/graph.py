@@ -48,25 +48,6 @@ def get_ldos(
   return ldos
 
 
-def show_positions(scaled_positions):
-  plt.figure(figsize=(12, 4))
-  plt.subplot(1, 3, 1)
-  plt.scatter(
-    scaled_positions[:, 0], scaled_positions[:, 1],
-    s=40/scaled_positions[:, 2]**0.5, c=scaled_positions[:, 2], cmap='hot'
-  )
-  plt.subplot(1, 3, 2)
-  plt.scatter(
-    scaled_positions[:, 0], scaled_positions[:, 2],
-    s=40/scaled_positions[:, 1]**0.5, c=scaled_positions[:, 1], cmap='hot'
-  )
-  plt.subplot(1, 3, 3)
-  plt.scatter(
-    scaled_positions[:, 1], scaled_positions[:, 2],
-    s=40/scaled_positions[:, 0]**0.5, c=scaled_positions[:, 0], cmap='hot'
-  )
-
-
 def repeat_cell(scaled_positions):
   repeated_positions = [scaled_positions]
   for dx in [-1, 0, 1]:
@@ -128,12 +109,14 @@ def get_ion_graph(filename, n_closest=8):
 
 
 @lru_cache(maxsize=1000)
-def get_ldos_graphs(filename, ldos_batch_size=1000, n_closest_ldos=32):
+def get_ldos_graphs(
+  filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201)
+):
   atoms = read(filename)
   atoms.__class__ = HashableAtoms
   cartesian_ion_positions = atoms.get_positions()
   cell = atoms.get_cell()
-  cartesian_ldos_positions = get_ldos_positions(cell)
+  cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1])
   cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)
   n_ions = len(cartesian_ion_positions)
   scaled_ion_positions = cell.scaled_positions(cartesian_ion_positions)

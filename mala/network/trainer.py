@@ -23,6 +23,8 @@ from mala.network.runner import Runner
 from mala.datahandling.lazy_load_dataset_single import LazyLoadDatasetSingle
 from mala.datahandling.multi_lazy_load_data_loader import \
     MultiLazyLoadDataLoader
+from mala.datahandling.graph_dataset import GraphDataset
+from dgl.dataloading import GraphDataLoader
 
 
 class Trainer(Runner):
@@ -585,7 +587,14 @@ class Trainer(Runner):
             do_shuffle = False
 
         # Prepare data loaders.(look into mini-batch size)
-        if isinstance(self.data.training_data_sets[0], FastTensorDataset):
+        if isinstance(self.data.training_data_sets[0], GraphDataset):
+            self.training_data_loaders.append(GraphDataLoader(self.data.training_data_sets[0],
+                                                              batch_size=self.parameters.
+                                                              mini_batch_size,
+                                                              sampler=self.train_sampler,
+                                                              **kwargs,
+                                                              shuffle=do_shuffle))            
+        elif isinstance(self.data.training_data_sets[0], FastTensorDataset):
             # Not shuffling in loader.
             # I manually shuffle the data set each epoch.
             self.training_data_loaders.append(DataLoader(self.data.training_data_sets[0],
@@ -603,8 +612,13 @@ class Trainer(Runner):
                                                              sampler=self.train_sampler,
                                                              **kwargs,
                                                              shuffle=do_shuffle))
-
-        if isinstance(self.data.validation_data_sets[0], FastTensorDataset):
+        if isinstance(self.data.validation_data_sets[0], GraphDataset):
+            self.validation_data_loaders.append(GraphDataLoader(self.data.validation_data_sets[0],
+                                                                batch_size=None,
+                                                                sampler=
+                                                                self.validation_sampler,
+                                                                **kwargs))
+        elif isinstance(self.data.validation_data_sets[0], FastTensorDataset):
             self.validation_data_loaders.append(DataLoader(self.data.validation_data_sets[0],
                                                            batch_size=None,
                                                            sampler=
@@ -620,9 +634,13 @@ class Trainer(Runner):
                                                                sampler=
                                                                self.validation_sampler,
                                                                **kwargs))
-
         if self.data.test_data_sets:
-            if isinstance(self.data.test_data_sets[0], LazyLoadDatasetSingle):
+            if isinstance(self.data.test_data_sets[0], GraphDataset):
+                self.test_data_loaders.append(GraphDataLoader(self.data.test_data_sets[0],
+                                                              batch_size=None,
+                                                              sampler=self.test_sampler,
+                                                              **kwargs))
+            elif isinstance(self.data.test_data_sets[0], LazyLoadDatasetSingle):
                 self.test_data_loaders = MultiLazyLoadDataLoader(self.data.test_data_sets, **kwargs)
             else:
                 self.test_data_loaders.append(DataLoader(self.data.test_data_sets[0],

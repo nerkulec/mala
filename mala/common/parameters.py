@@ -602,6 +602,9 @@ class ParametersData(ParametersBase):
         self.train_ratio = 0.1
         self.sample_ratio = 0.5
         self.use_fast_tensor_data_set = False
+        self.use_graph_data_set = False
+        self.n_closest_ions = 16
+        self.n_closest_ldos = 64
         self.shuffling_seed = None
 
 
@@ -727,6 +730,7 @@ class ParametersRunning(ParametersBase):
         self.max_number_epochs = 100
         self.verbosity = True
         self.mini_batch_size = 10
+        self.ldos_grid_batch_size = 1000
         self.weight_decay = 0
         self.early_stopping_epochs = 0
         self.early_stopping_threshold = 0

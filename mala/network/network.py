@@ -75,6 +75,9 @@ class Network(nn.Module):
             elif params.network.nn_type == "gru":
                 model = super(Network, GRU).__new__(GRU)
 
+            elif params.network.nn_type == "se3_transformer":
+                model = super(Network, SE3Transformer).__new__(SE3Transformer)
+
             if model is None:
                 raise Exception("Unsupported network architecture.")
         else:
@@ -620,8 +623,8 @@ class SE3Transformer(Network):
 
     def __init__(self, params):
         super(SE3Transformer, self).__init__(params)
-        self.hidden_size = params.layer_sizes[1]
-        self.ldos_size = params.ldos_grid_size
+        self.hidden_size = params.network.layer_sizes[1]
+        self.ldos_size = params.targets.ldos_gridsize
 
         input_fiber  = Fiber({'0': 1})
         hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})

@@ -61,6 +61,11 @@ class Descriptor(PhysicalData):
                 from mala.descriptors.atomic_density import AtomicDensity
                 descriptors = super(Descriptor, AtomicDensity).\
                     __new__(AtomicDensity)
+            
+            if params.descriptors.descriptor_type == "Position":
+                from mala.descriptors.position import Position
+                descriptors = super(Descriptor, Position).\
+                    __new__(Position)
 
             if descriptors is None:
                 raise Exception("Unsupported descriptor calculator.")
