@@ -11,6 +11,7 @@ import dgl
 import torch
 
 from functools import lru_cache
+from .utils import pickle_cache
 
 
 class HashableAtoms(Atoms):
@@ -90,7 +91,7 @@ def get_periodic_graph(graph_repeated_positions, cartesian_positions, n_nodes=12
   rel_pos = rel_pos[center_edges]
   periodic_graph = dgl.graph((src, dst), num_nodes=n_nodes)
   periodic_graph.edata['rel_pos'] = rel_pos
-  periodic_graph.ndata['pos'] = cartesian_positions[:n_nodes]
+  # periodic_graph.ndata['pos'] = cartesian_positions[:n_nodes]
   return periodic_graph
 
 
@@ -107,8 +108,9 @@ def get_ion_graph(filename, n_closest=8):
   periodic_graph = get_periodic_graph(graph_repeated_positions, cartesian_positions)
   return periodic_graph
 
-
+# TODO: make the graphs uni-bipartite
 @lru_cache(maxsize=1000)
+@pickle_cache
 def get_ldos_graphs(
   filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201)
 ):
@@ -133,9 +135,14 @@ def get_ldos_graphs(
     rel_pos = cartesian_ldos_positions_batch[dst] - cartesian_ion_positions[src]
     src = src % n_ions
     dst = dst + n_ions
+    # ldos_graph = dgl.DGLGraph()
+    # ldos_graph.add_nodes(n_ions, ntype='ion')
+    # ldos_graph.add_nodes(ldos_batch_size, ntype='grid')
+    # ldos_graph.add_edges(src, dst)
     ldos_graph = dgl.graph((src, dst), num_nodes=n_ions+ldos_batch_size)
+
     ldos_graph.edata['rel_pos'] = rel_pos
-    ldos_graph.ndata['pos'] = torch.cat([cartesian_ion_positions[:n_ions], cartesian_ldos_positions_batch])
+    # ldos_graph.ndata['pos'] = torch.cat([cartesian_ion_positions[:n_ions], cartesian_ldos_positions_batch])
     ldos_graphs.append(ldos_graph)
   return ldos_graphs
 

@@ -629,7 +629,6 @@ class SE3Transformer(Network):
         input_fiber  = Fiber({'0': 1})
         hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
         ldos_fiber   = Fiber({'0': self.ldos_size})
-        force_fiber  = Fiber({'0': 1, '1': 1})
         edge_fiber   = Fiber({})
 
         self.se3_block_input = AttentionBlockSE3(
@@ -664,44 +663,68 @@ class SE3Transformer(Network):
         )
         self.to(self.params._configuration["device"])
 
-    def forward(self, ion_graph: DGLGraph, grid_graph: DGLGraph, ion_basis=None, grid_basis=None):
-        n_ions = ion_graph.number_of_nodes()
-        n_grid = grid_graph.number_of_nodes()-n_ions
-        ion_basis = ion_basis or get_basis(
-            ion_graph.edata['rel_pos'], max_degree=1, compute_gradients=False,
+    # TODO: store the basis
+    def forward(self, graph_ions: DGLGraph, graph_grid: DGLGraph, basis_ions=None, basis_grid=None):
+        n_ions = graph_ions.number_of_nodes()
+        n_grid = graph_grid.number_of_nodes()-n_ions
+        basis_ions = basis_ions or get_basis(
+            graph_ions.edata['rel_pos'], max_degree=1, compute_gradients=False,
             use_pad_trick=False, amp=torch.is_autocast_enabled()
         )
-        ion_basis = update_basis_with_fused(
-            ion_basis, max_degree=1, use_pad_trick=False, fully_fused=True
+        basis_ions = update_basis_with_fused(
+            basis_ions, max_degree=1, use_pad_trick=False, fully_fused=True
         )
-        grid_basis = grid_basis or get_basis(
-            grid_graph.edata['rel_pos'], max_degree=1, compute_gradients=False,
+        basis_grid = basis_grid or get_basis(
+            graph_grid.edata['rel_pos'], max_degree=1, compute_gradients=False,
             use_pad_trick=False, amp=torch.is_autocast_enabled()
         )
-        grid_basis = update_basis_with_fused(
-            grid_basis, max_degree=1, use_pad_trick=False, fully_fused=True
+        basis_grid = update_basis_with_fused(
+            basis_grid, max_degree=1, use_pad_trick=False, fully_fused=True
         )
 
-        ion_edge_features = get_populated_edge_features(ion_graph.edata['rel_pos'], None)
-        grid_edge_features = get_populated_edge_features(grid_graph.edata['rel_pos'], None)
+        ion_edge_features = get_populated_edge_features(graph_ions.edata['rel_pos'], None)
+        grid_edge_features = get_populated_edge_features(graph_grid.edata['rel_pos'], None)
         node_features = self.se3_block_input(
-            {'0': ion_graph.ndata['atomic_number']}, ion_edge_features, graph=ion_graph, basis=ion_basis
+            {'0': graph_ions.ndata['feature']}, ion_edge_features, graph=graph_ions, basis=basis_ions
         )
         graph_embedding = self.se3_block_hidden(
-            node_features, ion_edge_features, graph=ion_graph, basis=ion_basis
+            node_features, ion_edge_features, graph=graph_ions, basis=basis_ions
         )
         graph_embedding_ex = {
             '0':torch.cat([
                 graph_embedding['0'],
-                torch.zeros((n_grid, self.hidden_size, 1), dtype=torch.float32, device=ion_graph.device)
+                torch.zeros((n_grid, self.hidden_size, 1), dtype=torch.float32, device=graph_ions.device)
             ]),
             '1':torch.cat([
                 graph_embedding['1'],
-                torch.zeros((n_grid, self.hidden_size, 3), dtype=torch.float32, device=ion_graph.device)
+                torch.zeros((n_grid, self.hidden_size, 3), dtype=torch.float32, device=graph_ions.device)
             ])
         }
         ldos_pred = self.se3_block_ldos(
-            graph_embedding_ex, grid_edge_features, graph=grid_graph, basis=grid_basis
+            graph_embedding_ex, grid_edge_features, graph=graph_grid, basis=basis_grid
         )
-        return ldos_pred['0'].squeeze(-1)[ion_graph.number_of_nodes():]
+        return ldos_pred['0'].squeeze(-1)[graph_ions.number_of_nodes():]
+
+    def calculate_loss(self, prediction, graph_ions, graph_grid):
+        """
+        Calculate the loss on grid values
+
+        Parameters
+        ----------
+        prediction : torch.Tensor
+            Graph containing the ions.
+
+        graph_grid : dgl.Graph
+            Graph connecting ions to grid positions
+
+        Returns
+        -------
+        loss_val : float
+            Loss value for prediction and target.
+
+        """
+        loss_grid = self.loss_func(prediction, graph_grid.ndata['target'][-prediction.shape[0]:])
+        # loss_ions = self.loss_func(prediction, graph_ions.ndata['target'])
+        loss_total = loss_grid #+ loss_ions
+        return loss_total
 

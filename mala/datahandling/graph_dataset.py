@@ -12,18 +12,21 @@ class GraphDataset(Dataset):
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
+    self.ldos_batch_size = ldos_batch_size
     self.ion_graphs = [
       get_ion_graph(input_path, n_closest_ions) for input_path in input_paths
     ]
     n_atoms = self.ion_graphs[0].number_of_nodes()
+    self.n_atoms = n_atoms
     for i in range(len(self.ion_graphs)):
-      self.ion_graphs[i].ndata['atomic_number'] = torch.ones((n_atoms, 1, 1), dtype=torch.float32)
+      self.ion_graphs[i].ndata['feature'] = torch.ones((n_atoms, 1, 1), dtype=torch.float32)
 
     self.ldos_graphs = [
       get_ldos_graphs(input_path, ldos_batch_size, n_closest_ldos) for input_path in input_paths
     ]
 
     ldos_size = np.prod(ldos_shape[:-1])
+    self.grid_size = ldos_size
     self.n_ldos_batches = ldos_size//ldos_batch_size
     for list_i, ldos_path in enumerate(ldos_paths):
       ldos = np.load(ldos_path).reshape((-1, ldos_shape[-1]))
@@ -32,11 +35,11 @@ class GraphDataset(Dataset):
         ldos_batch = torch.tensor(
           ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
         )
-        self.ldos_graphs[list_i][j].ndata['ldos'] = torch.cat(
+        self.ldos_graphs[list_i][j].ndata['target'] = torch.cat(
           [torch.zeros((n_atoms, ldos_shape[-1]), dtype=torch.float32), ldos_batch], dim=0
         )
         # ! Assume atom is hydrogen
-        self.ldos_graphs[list_i][j].ndata['atomic_number'] = torch.cat([
+        self.ldos_graphs[list_i][j].ndata['feature'] = torch.cat([
           torch.ones((n_atoms, 1, 1), dtype=torch.float32), torch.zeros((ldos_batch_size, 1, 1), dtype=torch.float32)
         ], dim=0)
 

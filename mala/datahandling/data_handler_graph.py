@@ -105,7 +105,13 @@ class DataHandlerGraph(DataHandlerBase):
     ########################
 
     # Temporary
-    def add_raw_snapshot(self, input_path, ldos_path, ldos_shape, add_snapshot_as):
+    def add_snapshot(
+        self, input_file, input_directory,
+        output_file, output_directory,
+        add_snapshot_as,
+        output_units="1/(eV*A^3)", input_units="None",
+        calculation_output_file="", snapshot_type="numpy"
+    ):
         """
         Add a snapshot to the data pipeline.
 
@@ -125,19 +131,30 @@ class DataHandlerGraph(DataHandlerBase):
             snapshot list as training, validation or testing snapshot,
             respectively.
         """
-        snapshot = {
-            "input_path": input_path,
-            "ldos_path": ldos_path,
-            "ldos_shape": ldos_shape
-        }
-        if add_snapshot_as == "tr":
-            self.raw_snapshots_train.append(snapshot)
-        elif add_snapshot_as == "va":
-            self.raw_snapshots_validation.append(snapshot)
-        elif add_snapshot_as == "te":
-            self.raw_snapshots_test.append(snapshot)
-        else:
-            raise Exception("Invalid snapshot type.")
+
+        snapshot = Snapshot(
+            input_file, input_directory,
+            output_file, output_directory,
+            add_snapshot_as,
+            input_units=input_units,
+            output_units=output_units,
+            calculation_output=calculation_output_file,
+            snapshot_type=snapshot_type
+        )
+        self.parameters.snapshot_directories_list.append(snapshot)
+        # snapshot = {
+        #     "input_path": input_path,
+        #     "ldos_path": ldos_path,
+        #     "ldos_shape": ldos_shape
+        # }
+        # if add_snapshot_as == "tr":
+        #     self.raw_snapshots_train.append(snapshot)
+        # elif add_snapshot_as == "va":
+        #     self.raw_snapshots_validation.append(snapshot)
+        # elif add_snapshot_as == "te":
+        #     self.raw_snapshots_test.append(snapshot)
+        # else:
+        #     raise Exception("Invalid snapshot type.")
 
     def clear_data(self):
         """
@@ -312,7 +329,6 @@ class DataHandlerGraph(DataHandlerBase):
 
     def _check_snapshots(self): # ! TODO
         """Check the snapshots for consistency."""
-        super(DataHandlerGraph, self)._check_snapshots()
         
 
         # Now we need to confirm that the snapshot list has some inner
@@ -334,6 +350,10 @@ class DataHandlerGraph(DataHandlerBase):
             self.nr_training_snapshots = len(self.raw_snapshots_train)
             self.nr_test_snapshots = len(self.raw_snapshots_test)
             self.nr_validation_snapshots = len(self.raw_snapshots_validation)
+            self.nr_snapshots = self.nr_training_snapshots + \
+                                self.nr_test_snapshots + \
+                                self.nr_validation_snapshots
+            self.output_dimension = 201
 
             # MALA can either be run in training or test-only mode.
             # But it has to be run in either of those!
@@ -412,7 +432,6 @@ class DataHandlerGraph(DataHandlerBase):
             test_ldos_paths = [snapshot["ldos_path"] for snapshot in self.raw_snapshots_test]
             test_input_paths = [snapshot["input_path"] for snapshot in self.raw_snapshots_test]
             ldos_shape = self.raw_snapshots_test[0]["ldos_shape"]
-            self.test_data_inputs.requires_grad = True
             self.test_data_sets.append(GraphDataset(
                 self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
                 self.params.running.ldos_grid_batch_size,
