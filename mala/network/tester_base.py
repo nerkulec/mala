@@ -115,10 +115,14 @@ class TesterBase:
 
         results = {}
         for observable in self.observables_to_test:
-            results[observable] = self.\
-                __calculate_observable_error(snapshot_number,
-                                             observable, predicted_outputs,
-                                             actual_outputs)
+            try:
+                results[observable] = self.\
+                    __calculate_observable_error(snapshot_number,
+                                                observable, predicted_outputs,
+                                                actual_outputs)
+            except ValueError:
+                print(f"Warning: Could not calculate observable {observable}")
+                results[observable] = np.inf
         return results
 
     def predict_targets(self, snapshot_number, data_type='te'):

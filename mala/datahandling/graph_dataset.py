@@ -7,8 +7,7 @@ from .graph import get_ion_graph, get_ldos_graphs
 class GraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
-    ldos_paths=[], input_paths=[],
-    ldos_shape=(90, 90, 60, 201),
+    ldos_paths=[], input_paths=[]
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
@@ -25,11 +24,22 @@ class GraphDataset(Dataset):
       get_ldos_graphs(input_path, ldos_batch_size, n_closest_ldos) for input_path in input_paths
     ]
 
-    ldos_size = np.prod(ldos_shape[:-1])
-    self.grid_size = ldos_size
-    self.n_ldos_batches = ldos_size//ldos_batch_size
+    self.grid_sizes = []
+    self.n_ldos_batches = None
+
     for list_i, ldos_path in enumerate(ldos_paths):
-      ldos = np.load(ldos_path).reshape((-1, ldos_shape[-1]))
+      ldos = np.load(ldos_path)
+      ldos_shape = ldos.shape
+
+      ldos_size = np.prod(ldos_shape[:-1])
+      self.grid_size = ldos_size
+      if self.n_ldos_batches is not None and self.n_ldos_batches != ldos_size//ldos_batch_size:
+        raise Exception("ldos batch sizes are not consistent")
+      self.n_ldos_batches = ldos_size//ldos_batch_size
+      self.grid_sizes.append(ldos_size)
+
+      self.ldos_dim = ldos_shape[-1]
+      ldos = ldos.reshape((-1, ldos_shape[-1]))
 
       for j in range(self.n_ldos_batches):
         ldos_batch = torch.tensor(

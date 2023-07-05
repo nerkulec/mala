@@ -88,10 +88,6 @@ class DataHandlerGraph(DataHandlerBase):
         self.validation_data_sets = []
         self.test_data_sets = []
 
-        self.raw_snapshots_train = []
-        self.raw_snapshots_test = []
-        self.raw_snapshots_validation = []
-
         # Needed for the fast tensor data sets.
         self.ldos_grid_batch_size = parameters.running.ldos_grid_batch_size
         if clear_data:
@@ -142,19 +138,6 @@ class DataHandlerGraph(DataHandlerBase):
             snapshot_type=snapshot_type
         )
         self.parameters.snapshot_directories_list.append(snapshot)
-        # snapshot = {
-        #     "input_path": input_path,
-        #     "ldos_path": ldos_path,
-        #     "ldos_shape": ldos_shape
-        # }
-        # if add_snapshot_as == "tr":
-        #     self.raw_snapshots_train.append(snapshot)
-        # elif add_snapshot_as == "va":
-        #     self.raw_snapshots_validation.append(snapshot)
-        # elif add_snapshot_as == "te":
-        #     self.raw_snapshots_test.append(snapshot)
-        # else:
-        #     raise Exception("Invalid snapshot type.")
 
     def clear_data(self):
         """
@@ -337,23 +320,16 @@ class DataHandlerGraph(DataHandlerBase):
             snapshot: Snapshot
             # As we are not actually interested in the number of snapshots,
             # but in the number of datasets, we also need to multiply by that.
-            # for snapshot in self.parameters.snapshot_directories_list:
-            #     if snapshot.snapshot_function == "tr":
-            #         self.nr_training_snapshots += 1
-            #     elif snapshot.snapshot_function == "te":
-            #         self.nr_test_snapshots += 1
-            #     elif snapshot.snapshot_function == "va":
-            #         self.nr_validation_snapshots += 1
-            #     else:
-            #         raise Exception("Unknown option for snapshot splitting "
-            #                         "selected.")
-            self.nr_training_snapshots = len(self.raw_snapshots_train)
-            self.nr_test_snapshots = len(self.raw_snapshots_test)
-            self.nr_validation_snapshots = len(self.raw_snapshots_validation)
-            self.nr_snapshots = self.nr_training_snapshots + \
-                                self.nr_test_snapshots + \
-                                self.nr_validation_snapshots
-            self.output_dimension = 201
+            for snapshot in self.parameters.snapshot_directories_list:
+                if snapshot.snapshot_function == "tr":
+                    self.nr_training_snapshots += 1
+                elif snapshot.snapshot_function == "te":
+                    self.nr_test_snapshots += 1
+                elif snapshot.snapshot_function == "va":
+                    self.nr_validation_snapshots += 1
+                else:
+                    raise Exception("Unknown option for snapshot splitting "
+                                    "selected.")
 
             # MALA can either be run in training or test-only mode.
             # But it has to be run in either of those!
@@ -400,45 +376,58 @@ class DataHandlerGraph(DataHandlerBase):
 
         if not self.parameters.use_graph_data_set:
             raise Exception("Wrong dataset type selected.")
-
-
-
+        
+        printout("Using GraphDataset.", min_verbosity=2)
         if self.nr_training_snapshots != 0:
-            printout("Using GraphDataset.", min_verbosity=2)
-            train_ldos_paths = [snapshot["ldos_path"] for snapshot in self.raw_snapshots_train]
-            train_input_paths = [snapshot["input_path"] for snapshot in self.raw_snapshots_train]
-            ldos_shape = self.raw_snapshots_train[0]["ldos_shape"]
+            train_ldos_paths = []
+            train_input_paths = []
+            for snapshot in self.parameters.snapshot_directories_list:
+                if snapshot.snapshot_function == "tr":
+                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
+                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    train_ldos_paths.append(ldos_path)
+                    train_input_paths.append(input_path)
+
             self.training_data_sets.append(GraphDataset(
                 self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
                 self.params.running.ldos_grid_batch_size,
-                ldos_paths=train_ldos_paths, input_paths=train_input_paths,
-                ldos_shape=ldos_shape
+                ldos_paths=train_ldos_paths, input_paths=train_input_paths
             ))
+            self.output_dimension = self.training_data_sets[0].ldos_dim # Probably not the right place to do it
 
         if self.nr_validation_snapshots != 0:
-            printout("Using GraphDataset.", min_verbosity=2)
-            validation_ldos_paths = [snapshot["ldos_path"] for snapshot in self.raw_snapshots_validation]
-            validation_input_paths = [snapshot["input_path"] for snapshot in self.raw_snapshots_validation]
-            ldos_shape = self.raw_snapshots_validation[0]["ldos_shape"]
+            validation_ldos_paths = []
+            validation_input_paths = []
+            for snapshot in self.parameters.snapshot_directories_list:
+                if snapshot.snapshot_function == "va":
+                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
+                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    validation_ldos_paths.append(ldos_path)
+                    validation_input_paths.append(input_path)
+
             self.validation_data_sets.append(GraphDataset(
                 self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
                 self.params.running.ldos_grid_batch_size,
-                ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                ldos_shape=ldos_shape
+                ldos_paths=validation_ldos_paths, input_paths=validation_input_paths
             ))
+            self.output_dimension = self.validation_data_sets[0].ldos_dim # Probably not the right place to do it
 
         if self.nr_test_snapshots != 0:
-            printout("Using GraphDataset.", min_verbosity=2)
-            test_ldos_paths = [snapshot["ldos_path"] for snapshot in self.raw_snapshots_test]
-            test_input_paths = [snapshot["input_path"] for snapshot in self.raw_snapshots_test]
-            ldos_shape = self.raw_snapshots_test[0]["ldos_shape"]
+            test_ldos_paths = []
+            test_input_paths = []
+            for snapshot in self.parameters.snapshot_directories_list:
+                if snapshot.snapshot_function == "te":
+                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
+                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    test_ldos_paths.append(ldos_path)
+                    test_input_paths.append(input_path)
+
             self.test_data_sets.append(GraphDataset(
                 self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
                 self.params.running.ldos_grid_batch_size,
-                ldos_paths=test_ldos_paths, input_paths=test_input_paths,
-                ldos_shape=ldos_shape
+                ldos_paths=test_ldos_paths, input_paths=test_input_paths
             ))
-
+            self.output_dimension = self.test_data_sets[0].ldos_dim # Probably not the right place to do it
     # Scaling
     ######################
     # Not implemented yet.
