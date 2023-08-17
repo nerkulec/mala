@@ -26,7 +26,7 @@ from mala.datahandling.multi_lazy_load_data_loader import \
 from mala.datahandling.graph_dataset import GraphDataset
 import dgl
 from dgl.dataloading import GraphDataLoader
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 class TrainerGraph(RunnerGraph):
@@ -54,7 +54,8 @@ class TrainerGraph(RunnerGraph):
         self.initial_test_loss = float("inf")
         self.final_validation_loss = float("inf")
         self.initial_validation_loss = float("inf")
-        self.optimizer = None
+        self.embedding_optimizer = None
+        self.decoding_optimizer = None
         self.scheduler = None
         self.patience_counter = 0
         self.last_epoch = 0
@@ -125,10 +126,12 @@ class TrainerGraph(RunnerGraph):
             iscaler_name = run_name + ".iscaler.pkl"
             oscaler_name = run_name + ".oscaler.pkl"
             param_name = run_name + ".params."+params_format
-            optimizer_name = run_name + ".optimizer.pth"
-            return all(map(os.path.isfile, [iscaler_name, oscaler_name,
-                                            param_name,
-                                            network_name, optimizer_name]))
+            embedding_optimizer_name = run_name + ".embedding_optimizer.pth"
+            decoding_optimizer_name = run_name + ".decoding_optimizer.pth"
+            return all(map(os.path.isfile, [
+                iscaler_name, oscaler_name, param_name,
+                network_name, embedding_optimizer_name, decoding_optimizer_name
+            ]))
 
     @classmethod
     def load_run(cls, run_name, path="./", zip_run=True,
@@ -222,16 +225,16 @@ class TrainerGraph(RunnerGraph):
         ############################
 
         tloss = float("inf")
-        vloss = self.__validate_network(self.network,
-                                        "validation",
-                                        self.parameters.
-                                        after_before_training_metric)
+        vloss = self.__validate_network(
+            self.network, "validation",
+            self.parameters.after_before_training_metric
+        )
 
         if self.data.test_data_sets:
-            tloss = self.__validate_network(self.network,
-                                            "test",
-                                            self.parameters.
-                                            after_before_training_metric)
+            tloss = self.__validate_network(
+                self.network, "test",
+                self.parameters.after_before_training_metric
+            )
 
         # Collect and average all the losses from all the devices
         if self.parameters_full.use_horovod:
@@ -290,8 +293,10 @@ class TrainerGraph(RunnerGraph):
                 for loader in self.training_data_loaders:
                     graph_ions: dgl.DGLGraph
                     graph_grid: dgl.DGLGraph
-                    for (graph_ions, graph_grid) in loader:
 
+                    embeddings = {}
+
+                    for graph_ions, graph_grid in loader:
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
                         if batchid == self.parameters.profiler_range[1]:
@@ -299,17 +304,26 @@ class TrainerGraph(RunnerGraph):
 
                         torch.cuda.nvtx.range_push(f"step {batchid}")
 
+                        graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
+                        if graph_ions_hash not in embeddings:
+                            torch.cuda.nvtx.range_push("embedding calcuation")
+                            embedding_extended = self._compute_embedding(graph_ions, graph_grid)
+                            torch.cuda.nvtx.range_pop()
+                            embeddings[graph_ions_hash] = embedding_extended
+                        embedding_extended = embeddings[graph_ions_hash]
+                        
+
                         torch.cuda.nvtx.range_push("data copy in")
-                        graph_ions = graph_ions.to(self.parameters._configuration["device"],
-                                                   non_blocking=True)
-                        graph_grid = graph_grid.to(self.parameters._configuration["device"],
-                                                   non_blocking=True)
+                        graph_grid = graph_grid.to(
+                            self.parameters._configuration["device"], non_blocking=True
+                        )
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
-                        loss = self.__process_mini_batch(self.network,
-                                                         graph_ions,
-                                                         graph_grid)
+                        loss = self.__process_mini_batch(
+                            self.network, graph_ions, graph_grid, embedding_extended
+                        )
+                        graph_grid.to('cpu', non_blocking=True)
                         # step
                         torch.cuda.nvtx.range_pop()
                         training_loss_sum += loss
@@ -326,6 +340,8 @@ class TrainerGraph(RunnerGraph):
                                      min_verbosity=2)
                             tsample = time.time()
                         batchid += 1
+                    self.embedding_optimizer.step()
+                    self.embedding_optimizer.zero_grad()
                 torch.cuda.synchronize()
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
@@ -336,46 +352,63 @@ class TrainerGraph(RunnerGraph):
                 torch.cuda.synchronize()
             else:
                 batchid = 0
+
                 for loader in self.training_data_loaders:
-                    for (graph_ions, graph_grid) in loader:
-                        graph_ions = graph_ions.to(
-                            self.parameters._configuration["device"])
-                        graph_grid = graph_grid.to(
-                            self.parameters._configuration["device"])
-                        training_loss_sum += self.__process_mini_batch(self.network, graph_ions, graph_grid)
+                    graph_ions: dgl.DGLGraph
+                    graph_grid: dgl.DGLGraph
+                    embeddings = {}
+
+                    for graph_ions, graph_grid in loader:
+                        graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
+                        if graph_ions_hash not in embeddings:
+                            torch.cuda.nvtx.range_push("embedding calcuation")
+                            embedding_extended = self._compute_embedding(graph_ions, graph_grid)
+                            torch.cuda.nvtx.range_pop()
+                            embeddings[graph_ions_hash] = embedding_extended
+                        embedding_extended = embeddings[graph_ions_hash]
+
+                        training_loss_sum += self.__process_mini_batch(
+                            self.network, graph_ions, graph_grid,
+                            embedding_extended
+                        )
                         batchid += 1
+                    self.embedding_optimizer.step()
+                    self.embedding_optimizer.zero_grad()
                 training_loss = training_loss_sum.item() / batchid
 
-            vloss = self.__validate_network(self.network,
-                                            "validation",
-                                            self.parameters.
-                                            during_training_metric)
+            vloss = self.__validate_network(
+                self.network, "validation", self.parameters.during_training_metric
+            )
 
             if self.parameters_full.use_horovod:
                 vloss = self.__average_validation(vloss, 'average_loss')
             if self.parameters_full.verbosity > 1:
-                printout("Epoch {0}: validation data loss: {1}, "
-                         "training data loss: {2}".format(epoch, vloss,
-                                                          training_loss),
-                         min_verbosity=2)
+                printout(
+                    f"Epoch {epoch}: validation data loss: {vloss}, "
+                    f"training data loss: {training_loss}",
+                    min_verbosity=2
+                )
             else:
-                printout("Epoch {0}: validation data loss: {1}".format(epoch,
-                                                                       vloss),
-                         min_verbosity=1)
+                printout(
+                    f"Epoch {epoch}: validation data loss: {vloss}",
+                    min_verbosity=1
+                )
 
             # summary_writer tensor board
             if self.parameters.visualisation:
-                self.tensor_board.add_scalars('Loss', {'validation': vloss,
-                                              'training': training_loss},
-                                              epoch)
-                self.tensor_board.add_scalar("Learning rate",
-                                             self.parameters.learning_rate,
-                                             epoch)
+                # ! Displays strangely in tensorboard
+                self.tensor_board.add_scalars(
+                    'Loss', {'validation': vloss, 'training': training_loss}, epoch
+                )
+                self.tensor_board.add_scalar(
+                    "Learning rate", self.parameters.learning_rate, epoch
+                )
                 if self.parameters.visualisation == 2:
                     for name, param in self.network.named_parameters():
                         self.tensor_board.add_histogram(name, param, epoch)
-                        self.tensor_board.add_histogram(f'{name}.grad',
-                                                        param.grad, epoch)
+                        self.tensor_board.add_histogram(
+                            f'{name}.grad', param.grad, epoch
+                        )
 
                 # method to make sure that all pending events have been written
                 # to disk
@@ -449,10 +482,10 @@ class TrainerGraph(RunnerGraph):
 
         tloss = float("inf")
         if len(self.data.test_data_sets) > 0:
-            tloss = self.__validate_network(self.network,
-                                            "test",
-                                            self.parameters.
-                                            after_before_training_metric)
+            tloss = self.__validate_network(
+                self.network, "test",
+                self.parameters.after_before_training_metric
+            )
             if self.parameters_full.use_horovod:
                 tloss = self.__average_validation(tloss, 'average_loss')
             printout("Final test data loss: ", tloss, min_verbosity=0)
@@ -487,29 +520,42 @@ class TrainerGraph(RunnerGraph):
 
         # Choose an optimizer to use.
         if self.parameters.trainingtype == "SGD":
-            self.optimizer = optim.SGD(self.network.parameters(),
-                                      lr=self.parameters.learning_rate,
-                                      weight_decay=self.parameters.
-                                      weight_decay)
+            raise Exception("SGD is not supported.")
+            # self.optimizer = optim.SGD(self.network.parameters(),
+            #                           lr=self.parameters.learning_rate,
+            #                           weight_decay=self.parameters.
+            #                           weight_decay)
         elif self.parameters.trainingtype == "Adam":
-            self.optimizer = optim.Adam(self.network.parameters(),
-                                        lr=self.parameters.learning_rate,
-                                        weight_decay=self.parameters.
-                                        weight_decay)
+            # self.optimizer = optim.Adam(self.network.parameters(),
+            #                             lr=self.parameters.learning_rate,
+            #                             weight_decay=self.parameters.
+            #                             weight_decay)
+            self.embedding_optimizer = optim.Adam(
+                self.network.embedding_layers.parameters(),
+                lr=self.parameters.learning_rate_embedding,
+                weight_decay=self.parameters.weight_decay
+            )
+            self.decoding_optimizer = optim.Adam(
+                self.network.decoding_layers.parameters(),
+                lr=self.parameters.learning_rate,
+                weight_decay=self.parameters.weight_decay
+            )
         elif self.parameters.trainingtype == "FusedAdam":
-            if version.parse(torch.__version__) >= version.parse("1.13.0"):
-                self.optimizer = optim.Adam(self.network.parameters(),
-                                           lr=self.parameters.learning_rate,
-                                           weight_decay=self.parameters.
-                                           weight_decay, fused=True)
-            else:
-                raise Exception("Training method requires "
-                                "at least torch 1.13.0.")
+            raise Exception("FusedAdam is not supported.")
+            # if version.parse(torch.__version__) >= version.parse("1.13.0"):
+            #     self.optimizer = optim.Adam(self.network.parameters(),
+            #                                lr=self.parameters.learning_rate,
+            #                                weight_decay=self.parameters.
+            #                                weight_decay, fused=True)
+            # else:
+            #     raise Exception("Training method requires "
+            #                     "at least torch 1.13.0.")
         else:
             raise Exception("Unsupported training method.")
 
         # Load data from pytorch file.
         if optimizer_dict is not None:
+            raise Exception("Loading optimizer state is not supported.")
             self.optimizer.\
                 load_state_dict(optimizer_dict['optimizer_state_dict'])
             self.patience_counter = optimizer_dict['early_stopping_counter']
@@ -553,18 +599,24 @@ class TrainerGraph(RunnerGraph):
             # broadcaste parameters and optimizer state from root device to
             # other devices
             hvd.broadcast_parameters(self.network.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+            hvd.broadcast_optimizer_state(self.embedding_optimizer, root_rank=0)
+            hvd.broadcast_optimizer_state(self.decoding_optimizer, root_rank=0)
 
             # Wraps the opimizer for multiGPU operation
-            self.optimizer = hvd.DistributedOptimizer(self.optimizer,
-                                                      named_parameters=
-                                                      self.network.
-                                                      named_parameters(),
-                                                      compression=compression,
-                                                      op=hvd.Average)
+            self.embedding_optimizer = hvd.DistributedOptimizer(
+                self.embedding_optimizer,
+                named_parameters=self.network.embedding_layers.named_parameters(),
+                compression=compression, op=hvd.Average
+            )
+            self.decoding_optimizer = hvd.DistributedOptimizer(
+                self.decoding_optimizer,
+                named_parameters=self.network.decoding_layers.named_parameters(),
+                compression=compression, op=hvd.Average
+            )
 
         # Instantiate the learning rate scheduler, if necessary.
         if self.parameters.learning_rate_scheduler == "ReduceLROnPlateau":
+            raise Exception("ReduceLROnPlateau is not supported.")
             self.scheduler = optim.\
                 lr_scheduler.ReduceLROnPlateau(self.optimizer,
                                                patience=self.parameters.
@@ -578,6 +630,7 @@ class TrainerGraph(RunnerGraph):
         else:
             raise Exception("Unsupported learning rate schedule.")
         if self.scheduler is not None and optimizer_dict is not None:
+            raise Exception("Loading optimizer state is not supported.")
             self.scheduler.\
                 load_state_dict(optimizer_dict['lr_scheduler_state_dict'])
 
@@ -593,12 +646,17 @@ class TrainerGraph(RunnerGraph):
 
         # Prepare data loaders.(look into mini-batch size)
         if isinstance(self.data.training_data_sets[0], GraphDataset):
-            self.training_data_loaders.append(GraphDataLoader(self.data.training_data_sets[0],
-                                                              batch_size=self.parameters.
-                                                              mini_batch_size,
-                                                              sampler=self.train_sampler,
-                                                              **kwargs,
-                                                              shuffle=do_shuffle))            
+            self.training_data_loaders.append(GraphDataLoader(
+                self.data.training_data_sets[0], batch_size=self.parameters.
+                mini_batch_size, sampler=self.train_sampler, **kwargs,
+                shuffle=do_shuffle
+            ))
+            # ! GraphDataLoader is not advantageous in our case
+            # self.training_data_loaders.append(DataLoader(
+            #     self.data.training_data_sets[0], batch_size=self.parameters.
+            #     mini_batch_size, sampler=self.train_sampler, **kwargs,
+            #     shuffle=do_shuffle
+            # ))
         elif isinstance(self.data.training_data_sets[0], FastTensorDataset):
             # Not shuffling in loader.
             # I manually shuffle the data set each epoch.
@@ -654,7 +712,10 @@ class TrainerGraph(RunnerGraph):
                                                          sampler=self.test_sampler,
                                                          **kwargs))
 
-    def __process_mini_batch(self, network, graph_ions: dgl.DGLGraph, graph_grid: dgl.DGLGraph):
+    def __process_mini_batch(
+        self, network, graph_ions: dgl.DGLGraph, graph_grid: dgl.DGLGraph,
+        embedding_extended: dict = None
+    ):
         """Process a mini batch."""
         if self.parameters._configuration["gpu"]:
             if self.parameters.use_graphs and self.train_graph is None:
@@ -664,11 +725,14 @@ class TrainerGraph(RunnerGraph):
                 s.wait_stream(torch.cuda.current_stream())
                 # Warmup for graphs
                 with torch.cuda.stream(s):
-                    for _ in range(20):
+                    for i in range(20):
                         self.network.zero_grad(set_to_none=True)
 
                         with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                            prediction = network(graph_ions, graph_grid)
+                            # prediction = network(graph_ions, graph_grid)
+                            embedding = network.embed(graph_ions)
+                            embedding_extended_ = network.extend_embedding(embedding, graph_ions, graph_grid)
+                            prediction = network.predict_ldos(embedding_extended_, graph_ions, graph_grid)
                             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
 
                         if self.gradscaler:
@@ -679,26 +743,32 @@ class TrainerGraph(RunnerGraph):
                 
                 # Create static entry point tensors to graph
                 self.static_graph_ions = graph_ions.clone()
-                self.static_graph_ions.ndata['feature'] = graph_ions.ndata['feature'].clone()
-                if graph_ions.ndata.get('target') is not None:
-                    self.static_graph_ions.ndata['target'] = graph_ions.ndata['target'].clone()
-                self.static_graph_ions.edata['rel_pos'] = graph_ions.edata['rel_pos'].clone()
+                for key, value in graph_ions.ndata.items():
+                    self.static_graph_ions.ndata[key] = value.clone()
+                for key, value in graph_ions.edata.items():
+                    self.static_graph_ions.edata[key] = value.clone()
 
                 self.static_graph_grid = graph_grid.clone()
-                self.static_graph_grid.ndata['feature'] = graph_grid.ndata['feature'].clone()
-                self.static_graph_grid.ndata['target']  = graph_grid.ndata['target'].clone()
-                self.static_graph_grid.edata['rel_pos'] = graph_grid.edata['rel_pos'].clone()
+                for key, value in graph_grid.ndata.items():
+                    self.static_graph_grid.ndata[key] = value.clone()
+                for key, value in graph_grid.edata.items():
+                    self.static_graph_grid.edata[key] = value.clone()
 
+                self.static_embedding_extended = {}
+                for key, value in embedding_extended.items():
+                    self.static_embedding_extended[key] = value.clone()
 
                 # Capture graph
                 self.train_graph = torch.cuda.CUDAGraph()
-                self.network.zero_grad(set_to_none=True)
+                self.network.decoding_layers.zero_grad(set_to_none=True)
                 with torch.cuda.graph(self.train_graph):
                     with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                        self.static_prediction = network(self.static_graph_ions, self.static_graph_grid)
-
+                        self.static_prediction = network.predict_ldos(
+                            self.static_embedding_extended, self.static_graph_ions, self.static_graph_grid
+                        )
                         self.static_loss = network.calculate_loss(
-                            self.static_prediction, self.static_graph_ions, self.static_graph_grid)
+                            self.static_prediction, self.static_graph_ions, self.static_graph_grid
+                        )
 
                     if self.gradscaler:
                         self.gradscaler.scale(self.static_loss).backward()
@@ -709,35 +779,38 @@ class TrainerGraph(RunnerGraph):
                 # ! Assumes same number of nodes and edges
 
                 # Copy connections (edges) to static graph
+
+                # Copy data to static tensors
                 src_ions, dst_ions = graph_ions.edges()
                 src_ions_static, dst_ions_static = self.static_graph_ions.edges()
                 src_ions_static.copy_(src_ions)
                 dst_ions_static.copy_(dst_ions)
+                for key, value in graph_ions.ndata.items():
+                    self.static_graph_ions.ndata[key].copy_(value)
+                for key, value in graph_ions.edata.items():
+                    self.static_graph_ions.edata[key].copy_(value)
+                
                 src_grid, dst_grid = graph_grid.edges()
                 src_grid_static, dst_grid_static = self.static_graph_grid.edges()
                 src_grid_static.copy_(src_grid)
                 dst_grid_static.copy_(dst_grid)
+                for key, value in graph_grid.ndata.items():
+                    self.static_graph_grid.ndata[key].copy_(value)
+                for key, value in graph_grid.edata.items():
+                    self.static_graph_grid.edata[key].copy_(value)
 
-                # Copy data to static tensors
-                self.static_graph_ions.ndata['feature'].copy_(graph_ions.ndata['feature'])
-                if graph_ions.ndata.get('target') is not None:
-                    self.static_graph_ions.ndata['target'].copy_(graph_ions.ndata['target'])
-                self.static_graph_ions.edata['rel_pos'].copy_(graph_ions.edata['rel_pos'])
-
-                self.static_graph_grid.ndata['feature'].copy_(graph_grid.ndata['feature'])
-                self.static_graph_grid.ndata['target'] .copy_(graph_grid.ndata['target'])
-                self.static_graph_grid.edata['rel_pos'].copy_(graph_grid.edata['rel_pos'])
+                for key, value in embedding_extended.items():
+                    self.static_embedding_extended[key].copy_(value)
 
                 self.train_graph.replay()
             else:
                 torch.cuda.nvtx.range_push("zero_grad")
-                self.network.zero_grad(set_to_none=True)
-                # zero_grad
+                self.network.decoding_layers.zero_grad(set_to_none=True)
                 torch.cuda.nvtx.range_pop()
 
                 with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
                     torch.cuda.nvtx.range_push("forward")
-                    prediction = network(graph_ions, graph_grid)
+                    prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
                     # forward
                     torch.cuda.nvtx.range_pop()
 
@@ -749,14 +822,20 @@ class TrainerGraph(RunnerGraph):
                 if self.gradscaler:
                     self.gradscaler.scale(loss).backward()
                 else:
-                    loss.backward()
+                    # self.network.decoding_layers.zero_grad(set_to_none=True)
+                    # self.network.embedding_layers.zero_grad(set_to_none=True)
+                    # self.network.zero_grad(set_to_none=True)
+                    self.decoding_optimizer.zero_grad(set_to_none=True)
+                    # ! retain_graph should probably be true (?)
+                    loss.backward(retain_graph=True)
+                    # loss.backward()
 
             torch.cuda.nvtx.range_push("optimizer")
             if self.gradscaler:
-                self.gradscaler.step(self.optimizer)
+                self.gradscaler.step(self.decoding_optimizer)
                 self.gradscaler.update()
             else:
-                self.optimizer.step()
+                self.decoding_optimizer.step()
             torch.cuda.nvtx.range_pop() # optimizer
 
             if self.train_graph:
@@ -764,11 +843,13 @@ class TrainerGraph(RunnerGraph):
             else:
                 return loss
         else:
-            prediction = network(graph_ions, graph_grid)
+            raise ValueError("CPU training not supported")
+            # prediction = network(graph_ions, graph_grid)
+            prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
             loss.backward()
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+            self.decoding_optimizer.step()
+            self.decoding_optimizer.zero_grad()
             return loss
 
     def __validate_network(self, network, data_set_type, validation_type):
@@ -801,11 +882,23 @@ class TrainerGraph(RunnerGraph):
                     batchid = 0
                     for loader in data_loaders:
                         printout(f"Validating {validation_type} on {data_set_type} data set.")
-                        for (graph_ions, graph_grid) in tqdm(loader):
-                            graph_ions = graph_ions.to(self.parameters._configuration["device"],
-                                                       non_blocking=True)
-                            graph_grid = graph_grid.to(self.parameters._configuration["device"],
-                                                       non_blocking=True)
+                        graph_ions: dgl.DGLGraph
+                        graph_grid: dgl.DGLGraph
+                        
+                        embeddings = {}
+
+                        for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                            graph_grid = graph_grid.to(
+                                self.parameters._configuration["device"], non_blocking=True
+                            )
+
+                            graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
+                            if graph_ions_hash not in embeddings:
+                                torch.cuda.nvtx.range_push("embedding calcuation")
+                                embedding_extended = self._compute_embedding(graph_ions, graph_grid)
+                                torch.cuda.nvtx.range_pop()
+                                embeddings[graph_ions_hash] = embedding_extended
+                            embedding_extended = embeddings[graph_ions_hash]
 
                             if self.parameters.use_graphs and self.validation_graph is None:
                                 printout("Capturing CUDA graph for validation.", min_verbosity=2)
@@ -815,30 +908,41 @@ class TrainerGraph(RunnerGraph):
                                 with torch.cuda.stream(s):
                                     for _ in range(20):
                                         with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                            prediction = network(graph_ions, graph_grid)
+                                            embedding = self.network.embed(graph_ions)
+                                            embedding_extended_ = self.network.extend_embedding(
+                                                embedding, graph_ions, graph_grid
+                                            )
+                                            prediction = network.predict_ldos(embedding_extended_, graph_ions, graph_grid)
                                             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
                                 torch.cuda.current_stream().wait_stream(s)
 
                                 # Create static entry point tensors to graph
 
                                 self.static_graph_ions_validation = graph_ions.clone()
-                                self.static_graph_ions_validation.ndata['feature'] = graph_ions.ndata['feature'].clone()
-                                if graph_ions.ndata.get('target') is not None:
-                                    self.static_graph_ions_validation.ndata['target'] = graph_ions.ndata['target'].clone()
-                                self.static_graph_ions_validation.edata['rel_pos'] = graph_ions.edata['rel_pos'].clone()
+                                for key, value in graph_ions.ndata.items():
+                                    self.static_graph_ions_validation.ndata[key] = value.clone()
+                                for key, value in graph_ions.edata.items():
+                                    self.static_graph_ions_validation.edata[key] = value.clone()
 
                                 self.static_graph_grid_validation = graph_grid.clone()
-                                self.static_graph_grid_validation.ndata['feature'] = graph_grid.ndata['feature'].clone()
-                                self.static_graph_grid_validation.ndata['target']  = graph_grid.ndata['target'].clone()
-                                self.static_graph_grid_validation.edata['rel_pos'] = graph_grid.edata['rel_pos'].clone()
+                                for key, value in graph_grid.ndata.items():
+                                    self.static_graph_grid_validation.ndata[key] = value.clone()
+                                for key, value in graph_grid.edata.items():
+                                    self.static_graph_grid_validation.edata[key] = value.clone()
+
+                                self.static_embedding_extended_validation = {}
+                                for key, value in embedding_extended.items():
+                                    self.static_embedding_extended_validation[key] = value.clone()
                                 
 
                                 # Capture graph
                                 self.validation_graph = torch.cuda.CUDAGraph()
                                 with torch.cuda.graph(self.validation_graph):
                                     with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                        self.static_prediction_validation = network(
-                                            self.static_graph_ions_validation, self.static_graph_grid_validation)
+                                        self.static_prediction_validation = network.predict_ldos(
+                                            self.static_embedding_extended_validation,
+                                            self.static_graph_ions_validation, self.static_graph_grid_validation,
+                                        )
                                         self.static_loss_validation = network.calculate_loss(
                                             self.static_prediction_validation, self.static_graph_ions_validation,
                                             self.static_graph_grid_validation)
@@ -857,20 +961,24 @@ class TrainerGraph(RunnerGraph):
                                 dst_grid_static.copy_(dst_grid)
 
                                 # Copy data to static tensors
-                                self.static_graph_ions_validation.ndata['feature'].copy_(graph_ions.ndata['feature'])
-                                if graph_ions.ndata.get('target') is not None:
-                                    self.static_graph_ions_validation.ndata['target'].copy_(graph_ions.ndata['target'])
-                                self.static_graph_ions_validation.edata['rel_pos'].copy_(graph_ions.edata['rel_pos'])
+                                for key, value in graph_ions.ndata.items():
+                                    self.static_graph_ions_validation.ndata[key].copy_(value)
+                                for key, value in graph_ions.edata.items():
+                                    self.static_graph_ions_validation.edata[key].copy_(value)
+
+                                for key, value in graph_grid.ndata.items():
+                                    self.static_graph_grid_validation.ndata[key].copy_(value)
+                                for key, value in graph_grid.edata.items():
+                                    self.static_graph_grid_validation.edata[key].copy_(value)
                                 
-                                self.static_graph_grid_validation.ndata['feature'].copy_(graph_grid.ndata['feature'])
-                                self.static_graph_grid_validation.ndata['target'] .copy_(graph_grid.ndata['target'])
-                                self.static_graph_grid_validation.edata['rel_pos'].copy_(graph_grid.edata['rel_pos'])
+                                for key, value in embedding_extended.items():
+                                    self.static_embedding_extended_validation[key].copy_(value)
 
                                 self.validation_graph.replay()
                                 validation_loss_sum += self.static_loss_validation
                             else:
                                 with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                    prediction = network(graph_ions, graph_grid)
+                                    prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
                                     loss = network.calculate_loss(prediction, graph_ions, graph_grid)
                                     validation_loss_sum += loss
                             if batchid != 0 and (batchid + 1) % report_freq == 0:
@@ -883,18 +991,30 @@ class TrainerGraph(RunnerGraph):
                                          f"validation avg throughput: {avg_sample_tput}",
                                          min_verbosity=2)
                                 tsample = time.time()
+                            graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
                     torch.cuda.synchronize()
                 else:
                     batchid = 0
                     for loader in data_loaders:
+                        embeddings = {}
+
                         printout(f"Validating {validation_type} on {data_set_type} data set.")
-                        for (graph_ions, graph_grid) in tqdm(loader):
-                            graph_ions = graph_ions.to(self.parameters._configuration["device"])
-                            graph_grid = graph_grid.to(self.parameters._configuration["device"])
-                            prediction = network(graph_ions, graph_grid)
+                        for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                            graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
+
+                            graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
+                            if graph_ions_hash not in embeddings:
+                                torch.cuda.nvtx.range_push("embedding calcuation")
+                                embedding_extended = self._compute_embedding(graph_ions, graph_grid)
+                                torch.cuda.nvtx.range_pop()
+                                embeddings[graph_ions_hash] = embedding_extended
+                            embedding_extended = embeddings[graph_ions_hash]
+
+                            prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
                             validation_loss_sum += \
                                 network.calculate_loss(prediction, graph_ions, graph_grid).item()
+                            graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
 
             validation_loss = validation_loss_sum.item() / batchid
@@ -902,8 +1022,7 @@ class TrainerGraph(RunnerGraph):
         elif validation_type == "band_energy" or \
                 validation_type == "total_energy":
             errors = []
-            if isinstance(self.validation_data_loaders,
-                          MultiLazyLoadDataLoader):
+            if isinstance(self.validation_data_loaders, MultiLazyLoadDataLoader):
                 loader_id = 0
                 for loader in data_loaders:
                     grid_size = self.data.parameters. \
@@ -916,26 +1035,36 @@ class TrainerGraph(RunnerGraph):
                         (grid_size, self.data.output_dimension))
                     last_start = 0
 
-                    printout(f"Validating {validation_type} on {data_set_type} data set.")
-                    for (graph_ions, graph_grid) in tqdm(loader):
+                    embeddings = {}
 
-                        graph_ions = graph_ions.to(self.parameters._configuration["device"])
-                        graph_grid = graph_grid.to(self.parameters._configuration["device"])
+                    printout(f"Validating {validation_type} on {data_set_type} data set.")
+                    for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                        graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
+                        
                         # TODO: check if this makes sense
                         length = int(graph_grid.number_of_nodes()-graph_ions.number_of_nodes())
+
+                        graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
+                        if graph_ions_hash not in embeddings:
+                            torch.cuda.nvtx.range_push("embedding calcuation")
+                            embedding_extended = self._compute_embedding(graph_ions, graph_grid)
+                            torch.cuda.nvtx.range_pop()
+                            embeddings[graph_ions_hash] = embedding_extended
+                        embedding_extended = embeddings[graph_ions_hash]
+
                         predicted_outputs[last_start:last_start + length, :] = \
                             self.data.output_data_scaler. \
-                                inverse_transform(self.network(graph_ions, graph_grid).
+                                inverse_transform(self.network.predict_ldos(embedding_extended, graph_ions, graph_grid).
                                                   to('cpu'), as_numpy=True)
                         actual_outputs[last_start:last_start + length, :] = \
                             self.data.output_data_scaler.inverse_transform(
                                 graph_grid.ndata['target'][graph_ions.number_of_nodes():].to('cpu'), as_numpy=True)
-
+                        graph_grid.to('cpu', non_blocking=True)
                         last_start += length
-                    errors.append(self._calculate_energy_errors(actual_outputs,
-                                                                predicted_outputs,
-                                                                validation_type,
-                                                                loader_id+offset_snapshots))
+                    errors.append(self._calculate_energy_errors(
+                        actual_outputs, predicted_outputs, validation_type,
+                        loader_id+offset_snapshots
+                    ))
                     loader_id += 1
 
             else:
@@ -945,24 +1074,21 @@ class TrainerGraph(RunnerGraph):
                     grid_size = self.data.parameters.\
                         snapshot_directories_list[snapshot_number].grid_size
 
-                    optimal_batch_size = self. \
-                        _correct_batch_size_for_testing(grid_size,
-                                                        self.parameters.
-                                                        mini_batch_size)
+                    optimal_batch_size = self._correct_batch_size_for_testing(
+                        grid_size, self.parameters.mini_batch_size
+                    )
                     number_of_batches_per_snapshot = int(grid_size /
                                                          optimal_batch_size)
 
-                    actual_outputs, \
-                    predicted_outputs = self.\
-                        _forward_entire_snapshot(snapshot_number,
-                                                 data_sets[0], data_set_type[0:2],
-                                                 number_of_batches_per_snapshot,
-                                                 optimal_batch_size)
+                    actual_outputs, predicted_outputs = self._forward_entire_snapshot(
+                        snapshot_number, data_sets[0], data_set_type[0:2],
+                        number_of_batches_per_snapshot, optimal_batch_size
+                    )
 
-                    errors.append(self._calculate_energy_errors(actual_outputs,
-                                                                predicted_outputs,
-                                                                validation_type,
-                                                                snapshot_number))
+                    errors.append(self._calculate_energy_errors(
+                        actual_outputs, predicted_outputs, validation_type,
+                        snapshot_number
+                    ))
             return np.mean(errors)
         else:
             raise Exception("Selected validation method not supported.")
@@ -1025,8 +1151,10 @@ class TrainerGraph(RunnerGraph):
         Follows https://pytorch.org/tutorials/recipes/recipes/saving_and_
         loading_a_general_checkpoint.html to some degree.
         """
-        optimizer_name = self.parameters.checkpoint_name \
-            + ".optimizer.pth"
+        embedding_optimizer_name = self.parameters.checkpoint_name \
+            + ".embedding_optimizer.pth"
+        decoding_optimizer_name = self.parameters.checkpoint_name \
+            + ".decoding_optimizer.pth"
 
         # Next, we save all the other objects.
 
@@ -1036,19 +1164,23 @@ class TrainerGraph(RunnerGraph):
         if self.scheduler is None:
             save_dict = {
                 'epoch': self.last_epoch,
-                'optimizer_state_dict': self.optimizer.state_dict(),
+                'embedding_optimizer_state_dict': self.embedding_optimizer.state_dict(),
+                'decoding_optimizer_state_dict': self.decoding_optimizer.state_dict(),
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }
         else:
             save_dict = {
                 'epoch': self.last_epoch,
-                'optimizer_state_dict': self.optimizer.state_dict(),
+                'embedding_optimizer_state_dict': self.embedding_optimizer.state_dict(),
+                'decoding_optimizer_state_dict': self.decoding_optimizer.state_dict(),
                 'lr_scheduler_state_dict': self.scheduler.state_dict(),
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }
-        torch.save(save_dict, optimizer_name,
+        torch.save(save_dict, embedding_optimizer_name,
+                   _use_new_zipfile_serialization=False)
+        torch.save(save_dict, decoding_optimizer_name,
                    _use_new_zipfile_serialization=False)
 
         self.save_run(self.parameters.checkpoint_name, save_runner=True)
