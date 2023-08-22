@@ -219,8 +219,7 @@ class TrainerGraph(RunnerGraph):
                                  optimizer_dict=checkpoint)
         return loaded_TrainerGraph
 
-    def train_network(self):
-        """Train a network using data given by a DataHandler."""
+    def calculate_initial_metrics(self):
         ############################
         # CALCULATE INITIAL METRICS
         ############################
@@ -265,9 +264,16 @@ class TrainerGraph(RunnerGraph):
         else:
             vloss_old = self.last_loss
 
+
+    def train_network(self):
+        """Train a network using data given by a DataHandler."""
+        self.calculate_initial_metrics()
+
         ############################
         # PERFORM TRAINING
         ############################
+
+        total_batch_id = 0
 
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):
             start_time = time.time()
@@ -278,6 +284,7 @@ class TrainerGraph(RunnerGraph):
             # Process each mini batch and save the training loss.
             # training_loss_sum = torch.zeros(1, device=self.parameters._configuration["device"])
             training_loss_sum = 0.0
+            training_loss_sum_logging = 0.0
 
             # train sampler
             if self.parameters_full.use_horovod:
@@ -298,7 +305,7 @@ class TrainerGraph(RunnerGraph):
 
                     embeddings = {}
 
-                    for graph_ions, graph_grid in tqdm(loader, desc="training", disable=self.parameters.verbosity<2):
+                    for graph_ions, graph_grid in tqdm(loader, desc="training", disable=self.parameters_full.verbosity < 2):
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
                         if batchid == self.parameters.profiler_range[1]:
@@ -322,12 +329,14 @@ class TrainerGraph(RunnerGraph):
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
-                        loss = self.__process_mini_batch(
+                        train_loss = self.__process_mini_batch(
                             self.network, graph_ions, graph_grid, embedding_extended
                         )
                         # step
                         torch.cuda.nvtx.range_pop()
-                        training_loss_sum += loss.detach().cpu().item()
+                        loss_float = train_loss.detach().cpu().item()
+                        training_loss_sum += loss_float
+                        training_loss_sum_logging += loss_float
 
                         if batchid != 0 and (batchid + 1) % self.parameters.training_report_frequency == 0:
                             torch.cuda.synchronize()
@@ -340,14 +349,26 @@ class TrainerGraph(RunnerGraph):
                                      f"train avg throughput: {avg_sample_tput}",
                                      min_verbosity=2)
                             tsample = time.time()
+                        
+
+                            # summary_writer tensor board
+                            if self.parameters.visualisation:
+                                training_loss_mean = training_loss_sum_logging / self.parameters.training_report_frequency
+                                # ! Displays strangely in tensorboard
+                                self.tensor_board.add_scalars(
+                                    'Loss', {'training': training_loss_mean}, total_batch_id
+                                )
+                                self.tensor_board.close()
+                                training_loss_sum_logging = 0.0
+
                         batchid += 1
+                        total_batch_id += 1
                     self.embedding_optimizer.step()
                     self.embedding_optimizer.zero_grad()
                 torch.cuda.synchronize()
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
 
-                # training_loss = training_loss_sum.item() / batchid
                 training_loss = training_loss_sum / batchid
 
                 # Calculate the validation loss. and output it.
@@ -369,14 +390,30 @@ class TrainerGraph(RunnerGraph):
                             embeddings[graph_ions_hash] = embedding_extended
                         embedding_extended = embeddings[graph_ions_hash]
 
-                        training_loss_sum += self.__process_mini_batch(
+                        train_loss = self.__process_mini_batch(
                             self.network, graph_ions, graph_grid,
                             embedding_extended
-                        )
+                        ).detach().cpu().item()
+                        training_loss_sum += train_loss
                         batchid += 1
                     self.embedding_optimizer.step()
                     self.embedding_optimizer.zero_grad()
-                training_loss = training_loss_sum.item() / batchid
+                training_loss = training_loss_sum / batchid
+
+                # summary_writer tensor board
+                if self.parameters.visualisation:
+                    # ! Displays strangely in tensorboard
+                    self.tensor_board.add_scalars(
+                        'Loss', {'validation': vloss}, total_batch_id
+                    )
+                    if self.parameters.visualisation == 2:
+                        for name, param in self.network.named_parameters():
+                            self.tensor_board.add_histogram(name, param, epoch)
+                            self.tensor_board.add_histogram(
+                                f'{name}.grad', param.grad, epoch
+                            )
+                    self.tensor_board.close()
+
 
             vloss = self.__validate_network(
                 self.network, "validation", self.parameters.during_training_metric
@@ -877,8 +914,9 @@ class TrainerGraph(RunnerGraph):
                             "when using this function.")
         network.eval()
         if validation_type == "ldos":
-            validation_loss_sum = torch.zeros(1, device=self.parameters.
-                                              _configuration["device"])
+            # validation_loss_sum = torch.zeros(1, device=self.parameters.
+                                            #   _configuration["device"])
+            validation_loss_sum = 0
             with torch.no_grad():
                 if self.parameters._configuration["gpu"]:
                     report_freq = self.parameters.training_report_frequency
@@ -980,12 +1018,12 @@ class TrainerGraph(RunnerGraph):
                                     self.static_embedding_extended_validation[key].copy_(value)
 
                                 self.validation_graph.replay()
-                                validation_loss_sum += self.static_loss_validation
+                                validation_loss_sum += self.static_loss_validation.detach().cpu().item()
                             else:
                                 with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
                                     prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
                                     loss = network.calculate_loss(prediction, graph_ions, graph_grid)
-                                    validation_loss_sum += loss
+                                    validation_loss_sum += loss.detach().cpu().item()
                             if batchid != 0 and (batchid + 1) % report_freq == 0:
                                 torch.cuda.synchronize()
                                 sample_time = time.time() - tsample
@@ -1018,11 +1056,11 @@ class TrainerGraph(RunnerGraph):
 
                             prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
                             validation_loss_sum += \
-                                network.calculate_loss(prediction, graph_ions, graph_grid).item()
+                                network.calculate_loss(prediction, graph_ions, graph_grid).detach().cpu().item()
                             graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
 
-            validation_loss = validation_loss_sum.item() / batchid
+            validation_loss = validation_loss_sum / batchid
             return validation_loss
         elif validation_type == "band_energy" or \
                 validation_type == "total_energy":

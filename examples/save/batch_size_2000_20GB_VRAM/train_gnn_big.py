@@ -22,19 +22,15 @@ parameters.running.max_number_epochs = 200
 # len(cartesian_ldos_positions) == 486000
 parameters.running.ldos_grid_batch_size = 2000
 parameters.running.mini_batch_size = 1
-parameters.running.learning_rate_embedding = 0.01
-parameters.running.learning_rate = 0.001
+parameters.running.learning_rate_embedding = 0.001
+parameters.running.learning_rate = 0.00001
 parameters.running.trainingtype = "Adam"
-parameters.running.visualisation = 2
+parameters.running.visualisation = 1
 parameters.running.weight_decay = 0.01
 
-# n_train = 1
-# n_val = 1
-# n_test = 1
-
-n_train = 14
-n_val = 4
-n_test = 2
+n_train = 1
+n_val = 1
+n_test = 1
 
 # ! TODO: log magnitude of weights (separately for embedding layers and for the rest)
 
@@ -46,11 +42,10 @@ parameters.targets.pseudopotential_path = "/bigdata/casus/wdm/Bartek_H2/H128"
 
 
 parameters.verbosity = 2
-parameters.running.training_report_frequency = 100
 
 parameters.use_gpu = True
 
-model_name = "GNN_training_reuse_embedding"
+model_name = "GNN_training_bigger_model"
 
 train_data_handler = mala.DataHandlerGraph(parameters)
 for i in range(n_train):
@@ -80,8 +75,7 @@ test_data_handler.prepare_data(reparametrize_scaler=False)
 parameters.network.nn_type = "se3_transformer"
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension,
-    256,
-    128,
+    64,
     train_data_handler.output_dimension
 ]
 # Setup network and trainer.

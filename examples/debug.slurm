@@ -4,9 +4,9 @@
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
-#SBATCH --time=24:00:00
-#SBATCH --mem=370G
-#SBATCH --cpus-per-task=48
+#SBATCH --time=48:00:00
+#SBATCH --mem=3920G
+#SBATCH --cpus-per-task=128
 #SBATCH -A casus
 #SBATCH -p casus
 
