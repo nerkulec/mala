@@ -694,33 +694,29 @@ class SE3Encoder(Network):
         return graph_embedding_extended
 
 
-class SE3Decoder(nn.Module):
+class SE3Decoder(Network):
     """Initialize this network as a SE(3)-Equivariant decoder graph neural network."""
 
     def __init__(self, params = None):
-        if params is not None: # DataParallel replicas need parameterless constructor
-            super(SE3Decoder, self).__init__()
-            self.params = params.network
-            self.hidden_size = params.network.layer_sizes[1]
-            self.ldos_size = params.targets.ldos_gridsize
+        super(SE3Decoder, self).__init__()
+        self.hidden_size = params.network.layer_sizes[1]
+        self.ldos_size = params.targets.ldos_gridsize
 
-            hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
-            ldos_fiber   = Fiber({'0': self.ldos_size})
-            edge_fiber   = Fiber({})
+        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+        ldos_fiber   = Fiber({'0': self.ldos_size})
+        edge_fiber   = Fiber({})
 
-            self.output_layer_grid = AttentionBlockSE3(
-                fiber_in=hidden_fiber,
-                fiber_out=ldos_fiber,
-                fiber_edge=edge_fiber,
-                num_heads=1,
-                channels_div=1,
-                max_degree=1,
-                fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
-            )
-            self.to(self.params._configuration["device"])
-        else:
-            super(SE3Decoder, self).__init__()
+        self.output_layer_grid = AttentionBlockSE3(
+            fiber_in=hidden_fiber,
+            fiber_out=ldos_fiber,
+            fiber_edge=edge_fiber,
+            num_heads=1,
+            channels_div=1,
+            max_degree=1,
+            fuse_level=ConvSE3FuseLevel.FULL,
+            low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
+        )
+        self.to(self.params._configuration["device"])
     
     def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
         basis_grid = {}
