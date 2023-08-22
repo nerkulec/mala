@@ -697,8 +697,8 @@ class SE3Encoder(Network):
 class SE3Decoder(Network):
     """Initialize this network as a SE(3)-Equivariant decoder graph neural network."""
 
-    def __init__(self, params = None):
-        super(SE3Decoder, self).__init__()
+    def __init__(self, params):
+        super(SE3Decoder, self).__init__(params)
         self.hidden_size = params.network.layer_sizes[1]
         self.ldos_size = params.targets.ldos_gridsize
 
