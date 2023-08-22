@@ -328,8 +328,6 @@ class RunnerGraph:
             predicted_outputs[i * data_set.ldos_batch_size:(i + 1) * data_set.ldos_batch_size, :] = \
                 self.data.output_data_scaler.inverse_transform(
                     self.network.predict_ldos(embedding_extended, graph_ions, graph_grid).to('cpu'), as_numpy=True)
-
-            graph_grid.to('cpu', non_blocking=True)
         
         # Restricting the actual quantities to physical meaningful values,
         # i.e. restricting the (L)DOS to positive values.
@@ -364,7 +362,6 @@ class RunnerGraph:
         embedding_extended = self.network.extend_embedding(
             embedding, graph_ions, graph_grid
         )
-        graph_ions.to('cpu', non_blocking=True)
         return embedding_extended
 
     def __prepare_to_run(self):

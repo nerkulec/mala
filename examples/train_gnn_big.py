@@ -25,7 +25,6 @@ parameters.running.mini_batch_size = 1
 parameters.running.learning_rate_embedding = 0.01
 parameters.running.learning_rate = 0.001
 parameters.running.trainingtype = "Adam"
-parameters.running.visualisation = 2
 parameters.running.weight_decay = 0.01
 
 # n_train = 1
@@ -46,6 +45,7 @@ parameters.targets.pseudopotential_path = "/bigdata/casus/wdm/Bartek_H2/H128"
 
 
 parameters.verbosity = 2
+parameters.running.visualisation = 1
 parameters.running.training_report_frequency = 100
 
 parameters.use_gpu = True
@@ -88,11 +88,12 @@ parameters.network.layer_sizes = [
 network = mala.Network(parameters)
 # network = torch.nn.DataParallel(network, device_ids=[0, 1, 2, 3])
 trainer = mala.TrainerGraph(parameters, network, train_data_handler)
-# try:
-trainer.train_network()
-print("Training finished!")
-# except:
-#     print("An exception occurred!")
+try:
+    trainer.train_network()
+except KeyboardInterrupt:
+    print("Training interrupted!")
+else:
+    print("Training finished!")
 
 
 additional_calculation_data = '/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot0.out'

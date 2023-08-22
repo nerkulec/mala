@@ -55,8 +55,8 @@ class TrainerGraph(RunnerGraph):
         self.initial_test_loss = float("inf")
         self.final_validation_loss = float("inf")
         self.initial_validation_loss = float("inf")
-        self.embedding_optimizer = None
-        self.decoding_optimizer = None
+        self.encoder_optimizer = None
+        self.decoder_optimizer = None
         self.scheduler = None
         self.patience_counter = 0
         self.last_epoch = 0
@@ -127,11 +127,11 @@ class TrainerGraph(RunnerGraph):
             iscaler_name = run_name + ".iscaler.pkl"
             oscaler_name = run_name + ".oscaler.pkl"
             param_name = run_name + ".params."+params_format
-            embedding_optimizer_name = run_name + ".embedding_optimizer.pth"
-            decoding_optimizer_name = run_name + ".decoding_optimizer.pth"
+            encoder_optimizer_name = run_name + ".encoder_optimizer.pth"
+            decoder_optimizer_name = run_name + ".decoder_optimizer.pth"
             return all(map(os.path.isfile, [
                 iscaler_name, oscaler_name, param_name,
-                network_name, embedding_optimizer_name, decoding_optimizer_name
+                network_name, encoder_optimizer_name, decoder_optimizer_name
             ]))
 
     @classmethod
@@ -363,8 +363,8 @@ class TrainerGraph(RunnerGraph):
 
                         batchid += 1
                         total_batch_id += 1
-                    self.embedding_optimizer.step()
-                    self.embedding_optimizer.zero_grad()
+                    self.encoder_optimizer.step()
+                    self.encoder_optimizer.zero_grad()
                 torch.cuda.synchronize()
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
@@ -396,8 +396,8 @@ class TrainerGraph(RunnerGraph):
                         ).detach().cpu().item()
                         training_loss_sum += train_loss
                         batchid += 1
-                    self.embedding_optimizer.step()
-                    self.embedding_optimizer.zero_grad()
+                    self.encoder_optimizer.step()
+                    self.encoder_optimizer.zero_grad()
                 training_loss = training_loss_sum / batchid
 
                 # summary_writer tensor board
@@ -569,13 +569,13 @@ class TrainerGraph(RunnerGraph):
             #                             lr=self.parameters.learning_rate,
             #                             weight_decay=self.parameters.
             #                             weight_decay)
-            self.embedding_optimizer = optim.Adam(
-                self.network.embedding_layers.parameters(),
+            self.encoder_optimizer = optim.Adam(
+                self.network.encoder.parameters(),
                 lr=self.parameters.learning_rate_embedding,
                 weight_decay=self.parameters.weight_decay
             )
-            self.decoding_optimizer = optim.Adam(
-                self.network.decoding_layers.parameters(),
+            self.decoder_optimizer = optim.Adam(
+                self.network.decoder.parameters(),
                 lr=self.parameters.learning_rate,
                 weight_decay=self.parameters.weight_decay
             )
@@ -638,18 +638,18 @@ class TrainerGraph(RunnerGraph):
             # broadcaste parameters and optimizer state from root device to
             # other devices
             hvd.broadcast_parameters(self.network.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.embedding_optimizer, root_rank=0)
-            hvd.broadcast_optimizer_state(self.decoding_optimizer, root_rank=0)
+            hvd.broadcast_optimizer_state(self.encoder_optimizer, root_rank=0)
+            hvd.broadcast_optimizer_state(self.decoder_optimizer, root_rank=0)
 
             # Wraps the opimizer for multiGPU operation
-            self.embedding_optimizer = hvd.DistributedOptimizer(
-                self.embedding_optimizer,
-                named_parameters=self.network.embedding_layers.named_parameters(),
+            self.encoder_optimizer = hvd.DistributedOptimizer(
+                self.encoder_optimizer,
+                named_parameters=self.network.encoder.named_parameters(),
                 compression=compression, op=hvd.Average
             )
-            self.decoding_optimizer = hvd.DistributedOptimizer(
-                self.decoding_optimizer,
-                named_parameters=self.network.decoding_layers.named_parameters(),
+            self.decoder_optimizer = hvd.DistributedOptimizer(
+                self.decoder_optimizer,
+                named_parameters=self.network.decoder.named_parameters(),
                 compression=compression, op=hvd.Average
             )
 
@@ -758,7 +758,8 @@ class TrainerGraph(RunnerGraph):
         """Process a mini batch."""
         if self.parameters._configuration["gpu"]:
             if self.parameters.use_graphs and self.train_graph is None:
-                # raise Exception("Ironically CUDA graphs do not work with DGL graphs for now")
+                # ! Test this out
+                raise Exception("Not tested for now")
                 printout("Capturing CUDA graph for training.", min_verbosity=2)
                 s = torch.cuda.Stream()
                 s.wait_stream(torch.cuda.current_stream())
@@ -799,7 +800,7 @@ class TrainerGraph(RunnerGraph):
 
                 # Capture graph
                 self.train_graph = torch.cuda.CUDAGraph()
-                self.network.decoding_layers.zero_grad(set_to_none=True)
+                self.network.decoder.zero_grad(set_to_none=True)
                 with torch.cuda.graph(self.train_graph):
                     with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
                         self.static_prediction = network.predict_ldos(
@@ -844,7 +845,7 @@ class TrainerGraph(RunnerGraph):
                 self.train_graph.replay()
             else:
                 torch.cuda.nvtx.range_push("zero_grad")
-                self.network.decoding_layers.zero_grad(set_to_none=True)
+                self.network.decoder.zero_grad(set_to_none=True)
                 torch.cuda.nvtx.range_pop()
 
                 with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
@@ -861,23 +862,17 @@ class TrainerGraph(RunnerGraph):
                 if self.gradscaler:
                     self.gradscaler.scale(loss).backward()
                 else:
-                    # self.network.decoding_layers.zero_grad(set_to_none=True)
-                    # self.network.embedding_layers.zero_grad(set_to_none=True)
-                    # self.network.zero_grad(set_to_none=True)
-                    self.decoding_optimizer.zero_grad(set_to_none=True)
-                    # ! retain_graph should probably be true (?)
+                    self.decoder_optimizer.zero_grad(set_to_none=True)
+                    torch.cuda.nvtx.range_push("backward")
                     loss.backward(retain_graph=True)
-                    self.network.decoding_layers.zero_grad(set_to_none=True)
-                    del prediction
-
-                    # loss.backward()
+                    torch.cuda.nvtx.range_pop()
 
             torch.cuda.nvtx.range_push("optimizer")
             if self.gradscaler:
-                self.gradscaler.step(self.decoding_optimizer)
+                self.gradscaler.step(self.decoder_optimizer)
                 self.gradscaler.update()
             else:
-                self.decoding_optimizer.step()
+                self.decoder_optimizer.step()
             torch.cuda.nvtx.range_pop() # optimizer
 
             if self.train_graph:
@@ -890,8 +885,8 @@ class TrainerGraph(RunnerGraph):
             prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
             loss.backward()
-            self.decoding_optimizer.step()
-            self.decoding_optimizer.zero_grad()
+            self.decoder_optimizer.step()
+            self.decoder_optimizer.zero_grad()
             return loss
 
     def __validate_network(self, network, data_set_type, validation_type):
@@ -1037,7 +1032,8 @@ class TrainerGraph(RunnerGraph):
                             graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
                     torch.cuda.synchronize()
-                else:
+                else: # CPU
+                    raise Exception("CPU validation not supported")
                     batchid = 0
                     for loader in data_loaders:
                         embeddings = {}
@@ -1194,10 +1190,10 @@ class TrainerGraph(RunnerGraph):
         Follows https://pytorch.org/tutorials/recipes/recipes/saving_and_
         loading_a_general_checkpoint.html to some degree.
         """
-        embedding_optimizer_name = self.parameters.checkpoint_name \
-            + ".embedding_optimizer.pth"
-        decoding_optimizer_name = self.parameters.checkpoint_name \
-            + ".decoding_optimizer.pth"
+        encoder_optimizer_name = self.parameters.checkpoint_name \
+            + ".encoder_optimizer.pth"
+        decoder_optimizer_name = self.parameters.checkpoint_name \
+            + ".decoder_optimizer.pth"
 
         # Next, we save all the other objects.
 
@@ -1207,23 +1203,23 @@ class TrainerGraph(RunnerGraph):
         if self.scheduler is None:
             save_dict = {
                 'epoch': self.last_epoch,
-                'embedding_optimizer_state_dict': self.embedding_optimizer.state_dict(),
-                'decoding_optimizer_state_dict': self.decoding_optimizer.state_dict(),
+                'encoder_optimizer_state_dict': self.encoder_optimizer.state_dict(),
+                'decoder_optimizer_state_dict': self.decoder_optimizer.state_dict(),
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }
         else:
             save_dict = {
                 'epoch': self.last_epoch,
-                'embedding_optimizer_state_dict': self.embedding_optimizer.state_dict(),
-                'decoding_optimizer_state_dict': self.decoding_optimizer.state_dict(),
+                'encoder_optimizer_state_dict': self.encoder_optimizer.state_dict(),
+                'decoder_optimizer_state_dict': self.decoder_optimizer.state_dict(),
                 'lr_scheduler_state_dict': self.scheduler.state_dict(),
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }
-        torch.save(save_dict, embedding_optimizer_name,
+        torch.save(save_dict, encoder_optimizer_name,
                    _use_new_zipfile_serialization=False)
-        torch.save(save_dict, decoding_optimizer_name,
+        torch.save(save_dict, decoder_optimizer_name,
                    _use_new_zipfile_serialization=False)
 
         self.save_run(self.parameters.checkpoint_name, save_runner=True)
