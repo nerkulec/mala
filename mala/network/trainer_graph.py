@@ -770,8 +770,7 @@ class TrainerGraph(RunnerGraph):
 
                         with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
                             # prediction = network(graph_ions, graph_grid)
-                            embedding = network.embed(graph_ions)
-                            embedding_extended_ = network.extend_embedding(embedding, graph_ions, graph_grid)
+                            embedding_extended_ = network.get_embedding(graph_ions, graph_grid)
                             prediction = network.predict_ldos(embedding_extended_, graph_ions, graph_grid)
                             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
 
@@ -929,7 +928,6 @@ class TrainerGraph(RunnerGraph):
                             graph_grid = graph_grid.to(
                                 self.parameters._configuration["device"], non_blocking=True
                             )
-
                             graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
                             if graph_ions_hash not in embeddings:
                                 torch.cuda.nvtx.range_push("embedding calcuation")
@@ -946,10 +944,7 @@ class TrainerGraph(RunnerGraph):
                                 with torch.cuda.stream(s):
                                     for _ in range(20):
                                         with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                            embedding = self.network.embed(graph_ions)
-                                            embedding_extended_ = self.network.extend_embedding(
-                                                embedding, graph_ions, graph_grid
-                                            )
+                                            embedding_extended_ = network.get_embedding(graph_ions, graph_grid)
                                             prediction = network.predict_ldos(embedding_extended_, graph_ions, graph_grid)
                                             loss = network.calculate_loss(prediction, graph_ions, graph_grid)
                                 torch.cuda.current_stream().wait_stream(s)

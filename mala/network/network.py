@@ -635,7 +635,7 @@ class SE3Encoder(Network):
             channels_div=1,
             max_degree=1,
             fuse_level=ConvSE3FuseLevel.FULL,
-            low_memory=True,
+            low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
         )
         self.hidden_layers_ = []
         for _ in range(len(self.params.layer_sizes) - 2):
@@ -647,7 +647,7 @@ class SE3Encoder(Network):
                 channels_div=1,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=True,
+                low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
             ))
         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
         self.to(self.params._configuration["device"])
@@ -694,29 +694,33 @@ class SE3Encoder(Network):
         return graph_embedding_extended
 
 
-class SE3Decoder(Network):
+class SE3Decoder(nn.Module):
     """Initialize this network as a SE(3)-Equivariant decoder graph neural network."""
 
-    def __init__(self, params):
-        super(SE3Decoder, self).__init__(params)
-        self.hidden_size = params.network.layer_sizes[1]
-        self.ldos_size = params.targets.ldos_gridsize
+    def __init__(self, params = None):
+        if params is not None: # DataParallel replicas need parameterless constructor
+            super(SE3Decoder, self).__init__()
+            self.params = params.network
+            self.hidden_size = params.network.layer_sizes[1]
+            self.ldos_size = params.targets.ldos_gridsize
 
-        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
-        ldos_fiber   = Fiber({'0': self.ldos_size})
-        edge_fiber   = Fiber({})
+            hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+            ldos_fiber   = Fiber({'0': self.ldos_size})
+            edge_fiber   = Fiber({})
 
-        self.output_layer_grid = AttentionBlockSE3(
-            fiber_in=hidden_fiber,
-            fiber_out=ldos_fiber,
-            fiber_edge=edge_fiber,
-            num_heads=1,
-            channels_div=1,
-            max_degree=1,
-            fuse_level=ConvSE3FuseLevel.FULL,
-            low_memory=True,
-        )
-        self.to(self.params._configuration["device"])
+            self.output_layer_grid = AttentionBlockSE3(
+                fiber_in=hidden_fiber,
+                fiber_out=ldos_fiber,
+                fiber_edge=edge_fiber,
+                num_heads=1,
+                channels_div=1,
+                max_degree=1,
+                fuse_level=ConvSE3FuseLevel.FULL,
+                low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
+            )
+            self.to(self.params._configuration["device"])
+        else:
+            super(SE3Decoder, self).__init__()
     
     def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
         basis_grid = {}
@@ -761,19 +765,12 @@ class SE3Transformer(Network):
     def __init__(self, params):
         super(SE3Transformer, self).__init__(params)
         self.encoder = SE3Encoder(params)
+        # self.decoder = torch.nn.DataParallel(SE3Decoder(params))
         self.decoder = SE3Decoder(params)
         self.to(self.params._configuration["device"])
 
-    def embed(self, graph_ions: DGLGraph):
-        graph_embedding = self.encoder.embed(graph_ions)
-        return graph_embedding
-    
-    def extend_embedding(self, graph_embedding: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
-        graph_embedding_extended = self.encoder.extend_embedding(graph_embedding, graph_ions, graph_grid)
-        return graph_embedding_extended
-
     def get_embedding(self, graph_ions: DGLGraph, graph_grid: DGLGraph):
-        graph_embedding_extended = self.decoder(graph_ions, graph_grid)
+        graph_embedding_extended = self.encoder(graph_ions, graph_grid)
         return graph_embedding_extended
 
     def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
@@ -829,7 +826,7 @@ class SE3Transformer(Network):
 #             channels_div=1,
 #             max_degree=1,
 #             fuse_level=ConvSE3FuseLevel.FULL,
-#             low_memory=True,
+#             low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
 #         )
 #         self.hidden_layers_ = []
 #         for _ in range(len(self.params.layer_sizes) - 2):
@@ -841,7 +838,7 @@ class SE3Transformer(Network):
 #                 channels_div=1,
 #                 max_degree=1,
 #                 fuse_level=ConvSE3FuseLevel.FULL,
-#                 low_memory=True,
+#                 low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
 #             ))
 #         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
 #         # ! hidden layers as list
@@ -853,7 +850,7 @@ class SE3Transformer(Network):
 #             channels_div=1,
 #             max_degree=1,
 #             fuse_level=ConvSE3FuseLevel.FULL,
-#             low_memory=True,
+#             low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
 #         )
 #         self.embedding_layers = nn.ModuleList([self.input_layer] + self.hidden_layers_)
 #         self.decoding_layers = nn.ModuleList([self.output_layer_grid])

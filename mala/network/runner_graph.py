@@ -358,10 +358,7 @@ class RunnerGraph:
         graph_ions = graph_ions.to(
             self.parameters._configuration["device"], non_blocking=True
         )
-        embedding = self.network.embed(graph_ions)
-        embedding_extended = self.network.extend_embedding(
-            embedding, graph_ions, graph_grid
-        )
+        embedding_extended = self.network.get_embedding(graph_ions, graph_grid)
         return embedding_extended
 
     def __prepare_to_run(self):
