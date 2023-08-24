@@ -8,6 +8,15 @@ import os
 # set CUDA to highest debug mode
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
+import signal
+
+def sigusr1_handler(sig, frame):
+  print('SIGUSR1 received, raising KeyboardInterrupt')
+  raise KeyboardInterrupt
+
+signal.signal(signal.SIGUSR1, sigusr1_handler)
+
+
 torch.cuda.device_count()
 
 parameters = mala.Parameters()
@@ -22,18 +31,23 @@ parameters.running.max_number_epochs = 200
 # len(cartesian_ldos_positions) == 486000
 parameters.running.ldos_grid_batch_size = 2000
 parameters.running.mini_batch_size = 1
-parameters.running.learning_rate_embedding = 0.01
-parameters.running.learning_rate = 0.005
 parameters.running.trainingtype = "Adam"
-parameters.running.weight_decay = 0.05
+parameters.running.weight_decay = 0.01
+
+parameters.running.learning_rate = 10**(-5)
+parameters.running.learning_rate_embedding = 10**(-3)
+parameters.running.learning_rate_scheduler = 'ReduceLROnPlateau'
+parameters.running.learning_rate_decay = 0.1
+parameters.running.learning_rate_patience = 0
+
 
 # n_train = 1
 # n_val = 1
 # n_test = 1
 
 n_train = 14
-n_val = 4
-n_test = 2
+n_val = 2
+n_test = 4
 
 # ! TODO: log magnitude of weights (separately for embedding layers and for the rest)
 
@@ -80,7 +94,6 @@ test_data_handler.prepare_data(reparametrize_scaler=False)
 parameters.network.nn_type = "se3_transformer"
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension,
-    256,
     128,
     train_data_handler.output_dimension
 ]

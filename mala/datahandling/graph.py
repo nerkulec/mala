@@ -126,6 +126,8 @@ def get_ldos_graphs(
     cartesian_ldos_positions = cartesian_ldos_positions[:ldos_batch_size*n_batches]
 
   cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)
+  if len(cartesian_ldos_positions) % ldos_batch_size != 0:
+    raise ValueError(f'len(cartesian_ldos_positions) = {len(cartesian_ldos_positions)} is not divisible by ldos_batch_size = {ldos_batch_size}')
   n_ions = len(cartesian_ion_positions)
   scaled_ion_positions = cell.scaled_positions(cartesian_ion_positions)
   repeated_ion_positions = repeat_cell(scaled_ion_positions)

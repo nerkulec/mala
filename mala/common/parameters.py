@@ -727,8 +727,8 @@ class ParametersRunning(ParametersBase):
     def __init__(self):
         super(ParametersRunning, self).__init__()
         self.trainingtype = "SGD"
-        self.learning_rate = 0.5
-        self.learning_rate_embedding = 0.5
+        self.learning_rate = 10**(-5)
+        self.learning_rate_embedding = 10**(-4)
         self.max_number_epochs = 100
         self.verbosity = True
         self.mini_batch_size = 10

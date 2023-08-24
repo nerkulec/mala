@@ -27,7 +27,8 @@ from mala.datahandling.graph_dataset import GraphDataset
 import dgl
 from dgl.dataloading import GraphDataLoader
 from tqdm.auto import tqdm
-from torchviz import make_dot
+
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 class TrainerGraph(RunnerGraph):
@@ -57,7 +58,8 @@ class TrainerGraph(RunnerGraph):
         self.initial_validation_loss = float("inf")
         self.encoder_optimizer = None
         self.decoder_optimizer = None
-        self.scheduler = None
+        self.encoder_scheduler = None
+        self.decoder_scheduler = None
         self.patience_counter = 0
         self.last_epoch = 0
         self.last_loss = None
@@ -273,6 +275,9 @@ class TrainerGraph(RunnerGraph):
         # PERFORM TRAINING
         ############################
 
+        # self.network.encoder = DDP(self.network.encoder)
+        # self.network.decoder = DDP(self.network.decoder)
+
         total_batch_id = 0
 
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):
@@ -354,7 +359,6 @@ class TrainerGraph(RunnerGraph):
                             # summary_writer tensor board
                             if self.parameters.visualisation:
                                 training_loss_mean = training_loss_sum_logging / self.parameters.training_report_frequency
-                                # ! Displays strangely in tensorboard
                                 self.tensor_board.add_scalars(
                                     'Loss', {'training': training_loss_mean}, total_batch_id
                                 )
@@ -396,24 +400,10 @@ class TrainerGraph(RunnerGraph):
                         ).detach().cpu().item()
                         training_loss_sum += train_loss
                         batchid += 1
+                        total_batch_id += 1
                     self.encoder_optimizer.step()
                     self.encoder_optimizer.zero_grad()
                 training_loss = training_loss_sum / batchid
-
-                # summary_writer tensor board
-                if self.parameters.visualisation:
-                    # ! Displays strangely in tensorboard
-                    self.tensor_board.add_scalars(
-                        'Loss', {'validation': vloss}, total_batch_id
-                    )
-                    if self.parameters.visualisation == 2:
-                        for name, param in self.network.named_parameters():
-                            self.tensor_board.add_histogram(name, param, epoch)
-                            self.tensor_board.add_histogram(
-                                f'{name}.grad', param.grad, epoch
-                            )
-                    self.tensor_board.close()
-
 
             vloss = self.__validate_network(
                 self.network, "validation", self.parameters.during_training_metric
@@ -435,12 +425,8 @@ class TrainerGraph(RunnerGraph):
 
             # summary_writer tensor board
             if self.parameters.visualisation:
-                # ! Displays strangely in tensorboard
                 self.tensor_board.add_scalars(
-                    'Loss', {'validation': vloss, 'training': training_loss}, epoch
-                )
-                self.tensor_board.add_scalar(
-                    "Learning rate", self.parameters.learning_rate, epoch
+                    'Loss', {'validation': vloss}, total_batch_id
                 )
                 if self.parameters.visualisation == 2:
                     for name, param in self.network.named_parameters():
@@ -448,9 +434,6 @@ class TrainerGraph(RunnerGraph):
                         self.tensor_board.add_histogram(
                             f'{name}.grad', param.grad, epoch
                         )
-
-                # method to make sure that all pending events have been written
-                # to disk
                 self.tensor_board.close()
 
             if self.parameters._configuration["gpu"]:
@@ -464,10 +447,14 @@ class TrainerGraph(RunnerGraph):
                 torch.cuda.synchronize()
 
             # If a scheduler is used, update it.
-            if self.scheduler is not None:
+            if self.encoder_scheduler is not None:
                 if self.parameters.learning_rate_scheduler ==\
                         "ReduceLROnPlateau":
-                    self.scheduler.step(vloss)
+                    self.encoder_scheduler.step(vloss)
+            if self.decoder_scheduler is not None:
+                if self.parameters.learning_rate_scheduler ==\
+                        "ReduceLROnPlateau":
+                    self.decoder_scheduler.step(vloss)
 
             # If early stopping is used, check if we need to do something.
             if self.parameters.early_stopping_epochs > 0:
@@ -655,23 +642,29 @@ class TrainerGraph(RunnerGraph):
 
         # Instantiate the learning rate scheduler, if necessary.
         if self.parameters.learning_rate_scheduler == "ReduceLROnPlateau":
-            raise Exception("ReduceLROnPlateau is not supported.")
-            self.scheduler = optim.\
-                lr_scheduler.ReduceLROnPlateau(self.optimizer,
-                                               patience=self.parameters.
-                                               learning_rate_patience,
-                                               mode="min",
-                                               factor=self.parameters.
-                                               learning_rate_decay,
-                                               verbose=True)
+            # raise Exception("ReduceLROnPlateau is not supported.")
+            self.encoder_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.encoder_optimizer,
+                patience=self.parameters.learning_rate_patience,
+                mode="min", factor=self.parameters.learning_rate_decay,
+                verbose=True
+            )
+            self.decoder_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.decoder_optimizer,
+                patience=self.parameters.learning_rate_patience,
+                mode="min", factor=self.parameters.learning_rate_decay,
+                verbose=True
+            )
         elif self.parameters.learning_rate_scheduler is None:
             pass
         else:
-            raise Exception("Unsupported learning rate schedule.")
-        if self.scheduler is not None and optimizer_dict is not None:
-            raise Exception("Loading optimizer state is not supported.")
-            self.scheduler.\
-                load_state_dict(optimizer_dict['lr_scheduler_state_dict'])
+            raise Exception("Unsupported learning rate scheduler.")
+        if self.encoder_scheduler is not None and optimizer_dict is not None:
+            self.encoder_scheduler.\
+                load_state_dict(optimizer_dict['lr_encoder_scheduler_state_dict'])
+        if self.decoder_scheduler is not None and optimizer_dict is not None:
+            self.decoder_scheduler.\
+                load_state_dict(optimizer_dict['lr_decoder_scheduler_state_dict'])
 
         # If lazy loading is used we do not shuffle the data points on their
         # own, but rather shuffle them
@@ -1022,7 +1015,7 @@ class TrainerGraph(RunnerGraph):
                                 printout(f"batch {batchid + 1}, " #/{total_samples}, "
                                          f"validation avg time: {avg_sample_time} "
                                          f"validation avg throughput: {avg_sample_tput}",
-                                         min_verbosity=2)
+                                         min_verbosity=3)
                                 tsample = time.time()
                             graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
@@ -1195,7 +1188,7 @@ class TrainerGraph(RunnerGraph):
         if self.parameters_full.use_horovod:
             if hvd.rank() != 0:
                 return
-        if self.scheduler is None:
+        if self.encoder_scheduler is None and self.decoder_scheduler is None:
             save_dict = {
                 'epoch': self.last_epoch,
                 'encoder_optimizer_state_dict': self.encoder_optimizer.state_dict(),
@@ -1208,7 +1201,8 @@ class TrainerGraph(RunnerGraph):
                 'epoch': self.last_epoch,
                 'encoder_optimizer_state_dict': self.encoder_optimizer.state_dict(),
                 'decoder_optimizer_state_dict': self.decoder_optimizer.state_dict(),
-                'lr_scheduler_state_dict': self.scheduler.state_dict(),
+                'lr_encoder_scheduler_state_dict': self.encoder_scheduler.state_dict(),
+                'lr_decoder_scheduler_state_dict': self.decoder_scheduler.state_dict(),
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }

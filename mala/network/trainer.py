@@ -318,7 +318,7 @@ class Trainer(Runner):
                             printout(f"batch {batchid + 1}, "#/{total_samples}, "
                                      f"train avg time: {avg_sample_time} "
                                      f"train avg throughput: {avg_sample_tput}",
-                                     min_verbosity=2)
+                                     min_verbosity=3)
                             tsample = time.time()
                         batchid += 1
                 torch.cuda.synchronize()

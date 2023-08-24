@@ -33,7 +33,7 @@ parameters.targets.ldos_gridoffset_ev = -13.5
 parameters.targets.ldos_gridspacing_ev = 0.1
 parameters.targets.pseudopotential_path = "/bigdata/casus/wdm/Bartek_H2/H128"
 
-parameters.verbosity = 1
+parameters.verbosity = 2
 
 parameters.use_gpu = True
 
@@ -46,9 +46,9 @@ parameters.use_gpu = True
 # ) as prof:
 #     with record_function("data_loading"):
 
-n_train = 1
+n_train = 14
 n_val = 1
-n_test = 1
+n_test = 5
 
 
 from mala.datahandling.data_repo import data_repo_path
@@ -84,7 +84,9 @@ test_data_handler.prepare_data(reparametrize_scaler=False)
 parameters.network.nn_type = "feed-forward"
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension,
-    32,
+    256,
+    256,
+    256,
     train_data_handler.output_dimension
 ]
 # Setup network and trainer.
