@@ -102,32 +102,6 @@ for i in range(n_train + n_val, n_train + n_val + n_test):
     )
 
 test_data_handler.prepare_data(reparametrize_scaler=False)
-
-train_data_handler = mala.DataHandlerGraph(parameters)
-for i in range(n_train):
-    train_data_handler.add_snapshot(
-        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
-        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
-        'tr', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
-    )
-for i in range(n_train, n_train + n_val):
-    train_data_handler.add_snapshot(
-        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
-        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
-        'va', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
-    )
-train_data_handler.prepare_data(reparametrize_scaler=False)
-
-test_data_handler = mala.DataHandlerGraph(parameters)
-for i in range(n_train + n_val, n_train + n_val + n_test):
-    test_data_handler.add_snapshot(
-        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
-        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
-        'te', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
-    )
-
-test_data_handler.prepare_data(reparametrize_scaler=False)
-
 parameters.network.nn_type = "se3_transformer"
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension,
