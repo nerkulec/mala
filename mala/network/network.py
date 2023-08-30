@@ -631,8 +631,8 @@ class SE3Encoder(Network):
             fiber_in=input_fiber,
             fiber_out=hidden_fiber,
             fiber_edge=edge_fiber,
-            num_heads=1,
-            channels_div=1,
+            num_heads=self.params.num_heads,
+            channels_div=self.params.channels_div,
             max_degree=1,
             fuse_level=ConvSE3FuseLevel.FULL,
             low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
@@ -643,8 +643,8 @@ class SE3Encoder(Network):
                 fiber_in=hidden_fiber,
                 fiber_out=hidden_fiber,
                 fiber_edge=edge_fiber,
-                num_heads=1,
-                channels_div=1,
+                num_heads=self.params.num_heads,
+                channels_div=self.params.channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
@@ -717,11 +717,11 @@ class SE3Decoder(nn.Module):
                 fiber_in=hidden_fiber,
                 fiber_out=ldos_fiber,
                 fiber_edge=edge_fiber,
-                num_heads=1,
-                channels_div=1,
+                num_heads=self.params.num_heads,
+                channels_div=self.params.channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=False, # ! TODO: CHANGE THIS FOR PERFORMANCE
+                low_memory=False,
             )
             self.to(self.params._configuration["device"])
     

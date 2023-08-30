@@ -23,21 +23,34 @@ parameters = mala.Parameters()
 
 parameters.data.data_splitting_type = "by_snapshot"
 parameters.data.use_graph_data_set = True
-parameters.data.n_closest_ions = 8
-parameters.data.n_closest_ldos = 16
+parameters.data.n_closest_ions = 16
+parameters.data.n_closest_ldos = 32
 # parameters.data.n_batches = 6000
 
-parameters.running.max_number_epochs = 200
+parameters.running.max_number_epochs = 100
 # len(cartesian_ldos_positions) == 486000
-parameters.running.ldos_grid_batch_size = 2000
+parameters.running.ldos_grid_batch_size = 1500
+# 600  -> VRAM 13000MB
+# 2000 -> VRAM 52500MB
 parameters.running.mini_batch_size = 1
 parameters.running.trainingtype = "Adam"
-parameters.running.weight_decay = 0.01
+parameters.running.weight_decay = 10**(-8)
 
-parameters.running.learning_rate = 10**(-5)
-parameters.running.learning_rate_embedding = 10**(-3)
+parameters.running.run_name = "10x32_nclosest_16_32_4heads_lrd5e-3_lre5e-3"
+
+hidden_layers = 10
+hidden_layer_size = 32
+parameters.network.num_heads = 4
+parameters.network.channels_div = 2
+
+parameters.running.learning_rate = 5*10**(-3)
+parameters.running.learning_rate_embedding = 5*10**(-3)
+parameters.running.embedding_reuse_steps = 10
+# reuse = 1   => 13:15-14:30/epoch
+# reuse = 10  => 11:30-12:30/epoch
+# reuse = 100 => 10:30-11:30/epoch
 parameters.running.learning_rate_scheduler = 'ReduceLROnPlateau'
-parameters.running.learning_rate_decay = 0.1
+parameters.running.learning_rate_decay = 0.25
 parameters.running.learning_rate_patience = 0
 
 
@@ -64,7 +77,31 @@ parameters.running.training_report_frequency = 100
 
 parameters.use_gpu = True
 
-model_name = "GNN_training_reuse_embedding"
+
+train_data_handler = mala.DataHandlerGraph(parameters)
+for i in range(n_train):
+    train_data_handler.add_snapshot(
+        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
+        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
+        'tr', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
+    )
+for i in range(n_train, n_train + n_val):
+    train_data_handler.add_snapshot(
+        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
+        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
+        'va', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
+    )
+train_data_handler.prepare_data(reparametrize_scaler=False)
+
+test_data_handler = mala.DataHandlerGraph(parameters)
+for i in range(n_train + n_val, n_train + n_val + n_test):
+    test_data_handler.add_snapshot(
+        f'H_snapshot{i}.pw.scf.in', f'/bigdata/casus/wdm/Bartek_H2/H128/snapshot{i}',
+        f'H_snapshot{i}.out.npy', '/bigdata/casus/wdm/Bartek_H2/H128/ldos/',
+        'te', calculation_output_file=f'/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot{i}.out'
+    )
+
+test_data_handler.prepare_data(reparametrize_scaler=False)
 
 train_data_handler = mala.DataHandlerGraph(parameters)
 for i in range(n_train):
@@ -94,9 +131,12 @@ test_data_handler.prepare_data(reparametrize_scaler=False)
 parameters.network.nn_type = "se3_transformer"
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension,
-    128,
+] + [hidden_layer_size for _ in range(hidden_layers)] + [
     train_data_handler.output_dimension
 ]
+printout("Parameters used:")
+parameters.show()
+
 # Setup network and trainer.
 network = mala.Network(parameters)
 # network = torch.nn.DataParallel(network, device_ids=[0, 1, 2, 3])
@@ -110,7 +150,7 @@ else:
 
 
 additional_calculation_data = '/bigdata/casus/wdm/Bartek_H2/H128/outputs/snapshot0.out'
-trainer.save_run(model_name, additional_calculation_data=additional_calculation_data)
+trainer.save_run(parameters.running.run_name, additional_calculation_data=additional_calculation_data)
 
 
 network = network.to('cuda')
@@ -131,6 +171,5 @@ tester = TesterGraph(parameters, network, test_data_handler,
 results = tester.test_all_snapshots()
 
 print(results)
-
 
 

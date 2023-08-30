@@ -24,7 +24,7 @@ fireSignal()
 trap "fireSignal SIGUSR1" SIGTERM
 trap "fireSignal SIGUSR1" SIGCONT
 trap "fireSignal SIGUSR1" SIGUSR1
-trap "fireSignal SIGUSR2" SIGINT
+trap "fireSignal SIGUSR1" SIGINT
 
 
 python3 $@ &

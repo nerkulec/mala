@@ -266,7 +266,8 @@ class ParametersNetwork(ParametersBase):
 
         # for transformer net
         self.dropout = 0.1
-        self.num_heads = 10
+        self.num_heads = 4
+        self.channels_div = 2
 
 
 class ParametersDescriptors(ParametersBase):
@@ -732,7 +733,8 @@ class ParametersRunning(ParametersBase):
         self.max_number_epochs = 100
         self.verbosity = True
         self.mini_batch_size = 10
-        self.ldos_grid_batch_size = 60
+        self.ldos_grid_batch_size = 600
+        self.embedding_reuse_steps = 10
         self.weight_decay = 0
         self.early_stopping_epochs = 0
         self.early_stopping_threshold = 0
@@ -744,6 +746,7 @@ class ParametersRunning(ParametersBase):
         self.use_shuffling_for_samplers = True
         self.checkpoints_each_epoch = 0
         self.checkpoint_name = "checkpoint_mala"
+        self.run_name = ''
         self.visualisation = 0
         self.visualisation_dir = os.path.join(".", "mala_logging")
         self.visualisation_dir_append_date = True
