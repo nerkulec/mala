@@ -8,18 +8,18 @@ except ModuleNotFoundError:
     pass
 
 from mala.datahandling.data_handler_base import DataHandlerBase
-from mala.datahandling.data_handler_graph import DataHandlerGraph
-from mala.datahandling.data_handler_mlp import DataHandlerMLP
 from mala.common.parameters import Parameters
 
 class DataHandler(DataHandlerBase):
     def __new__(cls, params: Parameters):
+        from mala.datahandling.data_handler_graph import DataHandlerGraph
+        from mala.datahandling.data_handler_mlp import DataHandlerMLP
         data_handler = None
 
         # Check if we're accessing through base class.
         # If not, we need to return the correct object directly.
         if cls == DataHandler:
-            if params.data.use_graph_dataset:
+            if params.network.nn_type == "se3_transformer":
                 data_handler = super(DataHandler, DataHandlerGraph).__new__(DataHandlerGraph)
             else:
                 data_handler = super(DataHandler, DataHandlerMLP).__new__(DataHandlerMLP)

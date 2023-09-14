@@ -283,10 +283,7 @@ class TrainerGraph(RunnerGraph):
         ############################
         # PERFORM TRAINING
         ############################
-
-        # self.network.encoder = DDP(self.network.encoder)
-        # self.network.decoder = DDP(self.network.decoder)
-
+        
         total_batch_id = 0
 
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):

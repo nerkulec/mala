@@ -12,7 +12,7 @@ from torch.utils.data import TensorDataset
 
 from mala.common.parallelizer import printout, barrier
 from mala.common.parameters import Parameters, DEFAULT_NP_DATA_DTYPE
-from mala.datahandling.data_handler_base import DataHandlerBase
+from mala.datahandling.data_handler import DataHandler
 from mala.datahandling.data_scaler import DataScaler
 from mala.datahandling.snapshot import Snapshot
 from mala.datahandling.lazy_load_dataset import LazyLoadDataset
@@ -22,7 +22,7 @@ from mala.datahandling.lazy_load_dataset_single import LazyLoadDatasetSingle
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 
 
-class DataHandlerMLP(DataHandlerBase):
+class DataHandlerMLP(DataHandler):
     """
     Loads and scales data. Can only process numpy arrays at the moment.
 

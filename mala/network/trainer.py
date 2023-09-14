@@ -25,6 +25,7 @@ from mala.datahandling.multi_lazy_load_data_loader import \
     MultiLazyLoadDataLoader
 from mala.datahandling.graph_dataset import GraphDataset
 from dgl.dataloading import GraphDataLoader
+from tqdm.auto import tqdm
 
 
 class Trainer(Runner):
@@ -75,8 +76,12 @@ class Trainer(Runner):
                 os.makedirs(self.parameters.visualisation_dir)
             if self.parameters.visualisation_dir_append_date:
                 date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+                if len(self.parameters.run_name) > 0:
+                    name = self.parameters.run_name + "_" + date_time
+                else:
+                    name = date_time
                 self.full_visualization_path = \
-                    os.path.join(self.parameters.visualisation_dir, date_time)
+                    os.path.join(self.parameters.visualisation_dir, name)
                 os.makedirs(self.full_visualization_path)
             else:
                 self.full_visualization_path = \
@@ -249,6 +254,13 @@ class Trainer(Runner):
         self.initial_validation_loss = vloss
         self.initial_test_loss = tloss
 
+
+        if self.parameters.visualisation:
+            self.tensor_board.add_scalars(
+                'Loss', {'validation': vloss}, 0
+            )
+            self.tensor_board.close()
+
         # Initialize all the counters.
         checkpoint_counter = 0
 
@@ -263,11 +275,15 @@ class Trainer(Runner):
         # PERFORM TRAINING
         ############################
 
+        total_batch_id = 0
+
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):
             start_time = time.time()
 
             # Prepare model for training.
             self.network.train()
+
+            training_loss_sum_logging = 0.0
 
             # Process each mini batch and save the training loss.
             training_loss_sum = torch.zeros(1, device=self.parameters._configuration["device"])
@@ -286,7 +302,7 @@ class Trainer(Runner):
                 t0 = time.time()
                 batchid = 0
                 for loader in self.training_data_loaders:
-                    for (inputs, outputs) in loader:
+                    for (inputs, outputs) in tqdm(loader, desc="training", disable=self.parameters_full.verbosity < 2):
 
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
@@ -309,6 +325,7 @@ class Trainer(Runner):
                         # step
                         torch.cuda.nvtx.range_pop()
                         training_loss_sum += loss
+                        training_loss_sum_logging += loss.item()
 
                         if batchid != 0 and (batchid + 1) % self.parameters.training_report_frequency == 0:
                             torch.cuda.synchronize()
@@ -320,7 +337,18 @@ class Trainer(Runner):
                                      f"train avg throughput: {avg_sample_tput}",
                                      min_verbosity=3)
                             tsample = time.time()
+
+                            # summary_writer tensor board
+                            if self.parameters.visualisation:
+                                training_loss_mean = training_loss_sum_logging / self.parameters.training_report_frequency
+                                self.tensor_board.add_scalars(
+                                    'Loss', {'training': training_loss_mean}, total_batch_id
+                                )
+                                self.tensor_board.close()
+                                training_loss_sum_logging = 0.0
+
                         batchid += 1
+                        total_batch_id += 1
                 torch.cuda.synchronize()
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
@@ -360,21 +388,15 @@ class Trainer(Runner):
 
             # summary_writer tensor board
             if self.parameters.visualisation:
-                # ! Displays strangely in tensorboard
-                self.tensor_board.add_scalars('Loss', {'validation': vloss,
-                                              'training': training_loss},
-                                              epoch)
-                self.tensor_board.add_scalar("Learning rate",
-                                             self.parameters.learning_rate,
-                                             epoch)
+                self.tensor_board.add_scalars(
+                    'Loss', {'validation': vloss}, total_batch_id
+                )
                 if self.parameters.visualisation == 2:
                     for name, param in self.network.named_parameters():
                         self.tensor_board.add_histogram(name, param, epoch)
-                        self.tensor_board.add_histogram(f'{name}.grad',
-                                                        param.grad, epoch)
-
-                # method to make sure that all pending events have been written
-                # to disk
+                        self.tensor_board.add_histogram(
+                            f'{name}.grad', param.grad, epoch
+                        )
                 self.tensor_board.close()
 
             if self.parameters._configuration["gpu"]:
@@ -707,7 +729,10 @@ class Trainer(Runner):
                     torch.cuda.nvtx.range_pop()
 
                     torch.cuda.nvtx.range_push("loss")
-                    loss = network.calculate_loss(prediction, target_data)
+                    if hasattr(network, "calculate_loss"):
+                        loss = network.calculate_loss(prediction, target_data)
+                    else:
+                        loss = network.module.calculate_loss(prediction, target_data)
                     # loss
                     torch.cuda.nvtx.range_pop()
 
@@ -765,7 +790,7 @@ class Trainer(Runner):
                     tsample = time.time()
                     batchid = 0
                     for loader in data_loaders:
-                        for (x, y) in loader:
+                        for (x, y) in tqdm(loader, desc="validation", disable=self.parameters_full.verbosity < 2):
                             x = x.to(self.parameters._configuration["device"],
                                      non_blocking=True)
                             y = y.to(self.parameters._configuration["device"],
@@ -802,7 +827,10 @@ class Trainer(Runner):
                             else:
                                 with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
                                     prediction = network(x)
-                                    loss = network.calculate_loss(prediction, y)
+                                if hasattr(network, "calculate_loss"):
+                                    loss = network.calculate_loss(prediction, y).item()
+                                else:
+                                    loss = network.module.calculate_loss(prediction, y).item()
                                     validation_loss_sum += loss
                             if batchid != 0 and (batchid + 1) % report_freq == 0:
                                 torch.cuda.synchronize()
@@ -812,7 +840,7 @@ class Trainer(Runner):
                                 printout(f"batch {batchid + 1}, " #/{total_samples}, "
                                          f"validation avg time: {avg_sample_time} "
                                          f"validation avg throughput: {avg_sample_tput}",
-                                         min_verbosity=2)
+                                         min_verbosity=3)
                                 tsample = time.time()
                             batchid += 1
                     torch.cuda.synchronize()
@@ -823,8 +851,12 @@ class Trainer(Runner):
                             x = x.to(self.parameters._configuration["device"])
                             y = y.to(self.parameters._configuration["device"])
                             prediction = network(x)
-                            validation_loss_sum += \
-                                network.calculate_loss(prediction, y).item()
+                            if hasattr(network, "calculate_loss"):
+                                validation_loss_sum += \
+                                    network.calculate_loss(prediction, y).item()
+                            else:
+                                validation_loss_sum += \
+                                    network.module.calculate_loss(prediction, y).item()
                             batchid += 1
 
             validation_loss = validation_loss_sum.item() / batchid
@@ -846,7 +878,7 @@ class Trainer(Runner):
                         (grid_size, self.data.output_dimension))
                     last_start = 0
 
-                    for (x, y) in loader:
+                    for (x, y) in tqdm(loader, desc="validation", disable=self.parameters_full.verbosity < 2):
 
                         x = x.to(self.parameters._configuration["device"])
                         length = int(x.size()[0])
