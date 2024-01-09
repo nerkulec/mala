@@ -79,7 +79,7 @@ def assign_relative_pos(graph, coords):
   return graph
 
 
-def get_periodic_graph(graph_repeated_positions, cartesian_positions, n_nodes=128):
+def get_periodic_graph(graph_repeated_positions, cartesian_positions, n_nodes=256):
   graph_repeated_positions = assign_relative_pos(graph_repeated_positions, cartesian_positions)
   src, dst = graph_repeated_positions.edges()
   rel_pos = graph_repeated_positions.edata['rel_pos']
@@ -108,8 +108,8 @@ def get_ion_graph(filename, n_closest=8):
   return periodic_graph
 
 # TODO: make the graphs uni-bipartite
-@lru_cache(maxsize=1000)
-@pickle_cache
+# @lru_cache(maxsize=1000)
+# @pickle_cache
 def get_ldos_graphs(
   filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
   n_batches=None

@@ -25,7 +25,7 @@ from mala.datahandling.multi_lazy_load_data_loader import \
     MultiLazyLoadDataLoader
 from mala.datahandling.graph_dataset import GraphDataset
 from dgl.dataloading import GraphDataLoader
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 
 
 class Trainer(Runner):
@@ -244,7 +244,7 @@ class Trainer(Runner):
                 tloss = self.__average_validation(tloss, 'average_loss')
                 self.initial_test_loss = tloss
 
-        printout("Initial Guess - validation data loss: ", vloss,
+        printout(f"Initial Guess - validation data loss: {vloss:.3e}",
                  min_verbosity=1)
         if self.data.test_data_sets:
             printout("Initial Guess - test data loss: ", tloss,
@@ -377,13 +377,11 @@ class Trainer(Runner):
             if self.parameters_full.use_horovod:
                 vloss = self.__average_validation(vloss, 'average_loss')
             if self.parameters_full.verbosity > 1:
-                printout("Epoch {0}: validation data loss: {1}, "
-                         "training data loss: {2}".format(epoch, vloss,
-                                                          training_loss),
+                printout(f"Epoch {epoch}: validation data loss: {vloss:.3e}, "
+                         f"training data loss: {training_loss:.3e}",
                          min_verbosity=2)
             else:
-                printout("Epoch {0}: validation data loss: {1}".format(epoch,
-                                                                       vloss),
+                printout(f"Epoch {epoch}: validation data loss: {vloss:.3e}",
                          min_verbosity=1)
 
             # summary_writer tensor board
@@ -463,7 +461,7 @@ class Trainer(Runner):
 
         # Calculate final loss.
         self.final_validation_loss = vloss
-        printout("Final validation data loss: ", vloss, min_verbosity=0)
+        printout(f"Final validation data loss: {vloss:.3e}", min_verbosity=0)
 
         tloss = float("inf")
         if len(self.data.test_data_sets) > 0:
@@ -899,8 +897,10 @@ class Trainer(Runner):
                     loader_id += 1
 
             else:
-                for snapshot_number in range(offset_snapshots,
-                                             number_of_snapshots+offset_snapshots):
+                for snapshot_number in trange(
+                    offset_snapshots, number_of_snapshots+offset_snapshots,
+                    desc="Validation"
+                ):
                     # Get optimal batch size and number of batches per snapshotss
                     grid_size = self.data.parameters.\
                         snapshot_directories_list[snapshot_number].grid_size

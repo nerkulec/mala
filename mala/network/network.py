@@ -629,15 +629,17 @@ class SE3Encoder(Network):
         hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
         edge_fiber   = Fiber({})
 
+        channels_div = int(np.sqrt(self.params.num_heads))
+
         self.input_layer = AttentionBlockSE3(
             fiber_in=input_fiber,
             fiber_out=hidden_fiber,
             fiber_edge=edge_fiber,
             num_heads=self.params.num_heads,
-            channels_div=self.params.channels_div,
+            channels_div=channels_div,
             max_degree=1,
             fuse_level=ConvSE3FuseLevel.FULL,
-            low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
+            low_memory=False, # ! TODO: CHANGE THIS FOR PERFORMANCE
         )
         self.hidden_layers_ = []
         for _ in range(len(self.params.layer_sizes) - 2):
@@ -646,10 +648,10 @@ class SE3Encoder(Network):
                 fiber_out=hidden_fiber,
                 fiber_edge=edge_fiber,
                 num_heads=self.params.num_heads,
-                channels_div=self.params.channels_div,
+                channels_div=channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=True, # ! TODO: CHANGE THIS FOR PERFORMANCE
+                low_memory=False, # ! TODO: CHANGE THIS FOR PERFORMANCE
             ))
         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
         self.to(self.params._configuration["device"])
@@ -706,7 +708,7 @@ class SE3Decoder(nn.Module):
             self.params = params.network
             self.loss_func = functional.mse_loss
 
-
+            channels_div = 1
 
             self.hidden_size = params.network.layer_sizes[1]
             self.ldos_size = params.targets.ldos_gridsize
@@ -719,8 +721,8 @@ class SE3Decoder(nn.Module):
                 fiber_in=hidden_fiber,
                 fiber_out=ldos_fiber,
                 fiber_edge=edge_fiber,
-                num_heads=self.params.num_heads,
-                channels_div=self.params.channels_div,
+                num_heads=1, # Output layer has to have 1 head
+                channels_div=channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=False,

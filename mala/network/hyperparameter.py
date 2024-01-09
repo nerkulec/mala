@@ -50,7 +50,7 @@ class Hyperparameter(JSONSerializable):
     """
 
     def __new__(cls, hotype=None, opttype="float", name="", low=0, high=0,
-                choices=None):
+                log=False, choices=None):
         """
         Create a Hyperparameter instance.
 
@@ -100,8 +100,8 @@ class Hyperparameter(JSONSerializable):
                     HyperparameterOptuna
                 hparam = HyperparameterOptuna(hotype=hotype,
                                               opttype=opttype, name=name,
-                                              low=low,
-                                              high=high, choices=choices)
+                                              low=low, high=high,
+                                              log=log, choices=choices)
             if hotype == "naswot":
                 from mala.network.hyperparameter_naswot import \
                     HyperparameterNASWOT
@@ -127,10 +127,11 @@ class Hyperparameter(JSONSerializable):
         return hparam
 
     def __init__(self, hotype=None, opttype="float", name="", low=0, high=0,
-                 choices=None):
+                 log=False, choices=None):
         super(Hyperparameter, self).__init__()
         self.opttype = opttype
         self.name = name
         self.low = low
         self.high = high
+        self.log = log
         self.choices = choices

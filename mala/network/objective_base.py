@@ -6,7 +6,9 @@ from mala.network.hyperparameter_optuna import HyperparameterOptuna
 from mala.network.hyperparameter_oat import HyperparameterOAT
 from mala.network.network import Network
 from mala.network.trainer import Trainer
+from mala.network.trainer_graph import TrainerGraph
 from mala import printout
+import datetime
 
 
 class ObjectiveBase:
@@ -81,8 +83,14 @@ class ObjectiveBase:
         for i in range(0, self.params.hyperparameters.
                        number_training_per_trial):
             test_network = Network(self.params)
-            test_trainer = Trainer(self.params, test_network,
-                                   self.data_handler)
+            if self.params.network.nn_type == "se3_transformer":
+                test_trainer = TrainerGraph(
+                    self.params, test_network, self.data_handler
+                )
+            else:
+                test_trainer = Trainer(
+                    self.params, test_network, self.data_handler
+                )
             test_trainer.train_network()
             final_validation_loss.append(test_trainer.final_validation_loss)
             if self.trial_type == "optuna" and \
@@ -206,11 +214,38 @@ class ObjectiveBase:
                         turned_off_layers.append(layer_counter)
                     layer_counter += 1
 
+            elif par.name == "weight_decay":
+                self.params.running.weight_decay = par.get_parameter(trial)
+
             elif "trainingtype" == par.name:
                 self.params.running.trainingtype = par.get_parameter(trial)
 
             elif "mini_batch_size" == par.name:
                 self.params.running.mini_batch_size = par.get_parameter(trial)
+
+            elif "ldos_grid_batch_size" == par.name:
+                self.params.running.ldos_grid_batch_size = par.get_parameter(trial)
+
+            elif "learning_rate_embedding" == par.name:
+                self.params.running.learning_rate_embedding = par.get_parameter(trial)
+
+            elif "n_closest_ions" == par.name:
+                self.params.data.n_closest_ions = par.get_parameter(trial)
+
+            elif "n_closest_ldos" == par.name:
+                self.params.data.n_closest_ldos = par.get_parameter(trial)
+
+            elif "num_heads" == par.name:
+                self.params.network.num_heads = par.get_parameter(trial)
+
+            elif "embedding_reuse_steps" == par.name:
+                self.params.running.embedding_reuse_steps = par.get_parameter(trial)
+
+            elif "learning_rate_embedding" == par.name:
+                self.params.running.learning_rate_embedding = par.get_parameter(trial)
+
+            elif "learning_rate_embedding" == par.name:
+                self.params.running.learning_rate_embedding = par.get_parameter(trial)
 
             elif "early_stopping_epochs" == par.name:
                 self.params.running.early_stopping_epochs = par.\
@@ -245,6 +280,17 @@ class ObjectiveBase:
         if self.optimize_layer_list:
             self.params.network.layer_sizes.\
                 append(self.data_handler.output_dimension)
+        
+
+        self.params.running.run_name = f"\
+gnn_test_optuna_\
+wd{self.params.running.weight_decay:.1e}_\
+lr{self.params.running.learning_rate:.1e}_\
+mb{self.params.running.mini_batch_size}_\
+lrd{self.params.running.learning_rate_decay}_\
+lrp{self.params.running.learning_rate_patience}_\
+early{self.params.running.early_stopping_epochs}_\
+{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
     def parse_trial_oat(self, trial):
         """
@@ -258,7 +304,6 @@ class ObjectiveBase:
         if self.optimize_layer_list:
             self.params.network.layer_sizes = \
                 [self.data_handler.input_dimension]
-
         if self.optimize_activation_list:
             self.params.network.layer_activations = []
 

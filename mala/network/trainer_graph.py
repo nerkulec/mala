@@ -266,25 +266,27 @@ class TrainerGraph(RunnerGraph):
                 'Loss', {'validation': vloss}, 0
             )
             self.tensor_board.close()
-
-        # If we restarted from a checkpoint, we have to differently initialize
-        # the loss.
-        if self.last_loss is None:
-            vloss_old = vloss
-        else:
-            vloss_old = self.last_loss
+        return vloss
 
 
     def train_network(self):
         """Train a network using data given by a DataHandler."""
         print("Warning! Skipping initial metrics calculation")
-        # self.calculate_initial_metrics()
+
+        # If we restarted from a checkpoint, we have to differently initialize
+        # the loss.
+        vloss = self.calculate_initial_metrics()
+        if self.last_loss is None:
+            vloss_old = vloss
+        else:
+            vloss_old = self.last_loss
 
         ############################
         # PERFORM TRAINING
         ############################
         
         total_batch_id = 0
+        checkpoint_counter = 0
 
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):
             start_time = time.time()

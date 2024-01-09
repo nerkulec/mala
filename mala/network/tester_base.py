@@ -154,20 +154,20 @@ class TesterBase:
         self.data.target_calculator.invalidate_target()
         # Select the inputs used for prediction
         if data_type == 'tr':
-            offset_snapshots = 0
+            # offset_snapshots = 0
             data_set = self.data.training_data_sets[0]
         elif data_type == 'va':
-            offset_snapshots = self.data.nr_training_snapshots
+            # offset_snapshots = self.data.nr_training_snapshots
             data_set = self.data.validation_data_sets[0]
         elif data_type == 'te':
-            offset_snapshots = self.data.nr_validation_snapshots + \
-                               self.data.nr_training_snapshots
+            # offset_snapshots = self.data.nr_validation_snapshots + \
+            #                    self.data.nr_training_snapshots
             data_set = self.data.test_data_sets[0]
         else:
             raise ValueError(f"Invalid data_type: {data_type} -- Valid options are tr, va, te.")
         # Forward through network.
         return self.\
-            _forward_entire_snapshot(offset_snapshots+snapshot_number,
+            _forward_entire_snapshot(snapshot_number,
                                      data_set,
                                      data_type,
                                      self.number_of_batches_per_snapshot,

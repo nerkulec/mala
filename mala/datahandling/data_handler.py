@@ -11,7 +11,7 @@ from mala.datahandling.data_handler_base import DataHandlerBase
 from mala.common.parameters import Parameters
 
 class DataHandler(DataHandlerBase):
-    def __new__(cls, params: Parameters):
+    def __new__(cls, params: Parameters, *args, **kwargs):
         from mala.datahandling.data_handler_graph import DataHandlerGraph
         from mala.datahandling.data_handler_mlp import DataHandlerMLP
         data_handler = None

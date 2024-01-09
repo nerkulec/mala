@@ -36,11 +36,13 @@ class HyperparameterOptuna(Hyperparameter):
         List of possible choices (for categorical parameter).
     """
 
-    def __init__(self, hotype=None, opttype="float", name="", low=0, high=0, choices=None):
+    def __init__(self, hotype=None, opttype="float", name="", low=0, high=0,
+                 log=False, choices=None):
         super(HyperparameterOptuna, self).__init__(opttype=opttype,
                                                    name=name,
                                                    low=low,
                                                    high=high,
+                                                   log=log,
                                                    choices=choices)
 
         # For now, only three types of hyperparameters are allowed:
@@ -88,7 +90,9 @@ class HyperparameterOptuna(Hyperparameter):
             Return value is based on type of hyperparameter.
         """
         if self.opttype == "float":
-            return trial.suggest_float(self.name, self.low, self.high)
+            return trial.suggest_float(
+                self.name, self.low, self.high, log=self.log
+            )
         else:
             raise Exception("Wrong hyperparameter type.")
 

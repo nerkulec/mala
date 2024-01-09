@@ -79,6 +79,9 @@ class DataHandlerGraph(DataHandlerBase):
                              use_horovod=self.use_horovod)
 
         # Actual data points in the different categories.
+        self.nr_training_data = 0
+        self.nr_test_data = 0
+        self.nr_validation_data = 0
 
         # Number of snapshots in these categories.
         self.nr_training_snapshots = 0
@@ -150,6 +153,9 @@ class DataHandlerGraph(DataHandlerBase):
         self.training_data_sets = []
         self.validation_data_sets = []
         self.test_data_sets = []
+        self.nr_training_data = 0
+        self.nr_test_data = 0
+        self.nr_validation_data = 0
         self.nr_training_snapshots = 0
         self.nr_test_snapshots = 0
         self.nr_validation_snapshots = 0
@@ -185,6 +191,7 @@ class DataHandlerGraph(DataHandlerBase):
         # Do a consistency check of the snapshots so that we don't run into
         # an error later. If there is an error, check_snapshots() will raise
         # an exception.
+
         printout("Checking the snapshots and your inputs for consistency.",
                  min_verbosity=1)
         self._check_snapshots()
@@ -205,7 +212,7 @@ class DataHandlerGraph(DataHandlerBase):
         # Parametrize the scalers, if needed.
         if reparametrize_scaler:
             printout("Initializing the data scalers.", min_verbosity=1)
-            self.__parametrize_scalers()
+            self._parametrize_scalers()
             printout("Data scalers initialized.", min_verbosity=0)
         elif self.parameters.use_lazy_loading is False and \
                 self.nr_training_snapshots != 0:
@@ -325,10 +332,13 @@ class DataHandlerGraph(DataHandlerBase):
             for snapshot in self.parameters.snapshot_directories_list:
                 if snapshot.snapshot_function == "tr":
                     self.nr_training_snapshots += 1
+                    # self.nr_training_data += snapshot.grid_size
                 elif snapshot.snapshot_function == "te":
                     self.nr_test_snapshots += 1
+                    # self.nr_test_data += snapshot.grid_size
                 elif snapshot.snapshot_function == "va":
                     self.nr_validation_snapshots += 1
+                    # self.nr_validation_data += snapshot.grid_size
                 else:
                     raise Exception("Unknown option for snapshot splitting "
                                     "selected.")
@@ -353,14 +363,56 @@ class DataHandlerGraph(DataHandlerBase):
         else:
             raise Exception("Wrong parameter for data splitting provided.")
 
-
+        # if not self.parameters.use_lazy_loading:
+        #     self.__allocate_arrays() # ! ?
 
         # Reordering the lists.
         snapshot_order = {'tr': 0, 'va': 1, 'te': 2}
-        self.parameters.snapshot_directories_list.sort(key=lambda d:
-                                                       snapshot_order
-                                                       [d.snapshot_function])
+        self.parameters.snapshot_directories_list.sort(
+            key=lambda d: snapshot_order[d.snapshot_function]
+        )
 
+
+    def __allocate_arrays(self):
+        raise Exception("Shouldn't be used")
+        # if self.nr_training_data > 0:
+        #     self.training_data_inputs = np.zeros((self.nr_training_data,
+        #                                           self.input_dimension),
+        #                                          dtype=DEFAULT_NP_DATA_DTYPE)
+        #     self.training_data_outputs = np.zeros((self.nr_training_data,
+        #                                            self.output_dimension),
+        #                                           dtype=DEFAULT_NP_DATA_DTYPE)
+
+        # if self.nr_validation_data > 0:
+        #     self.validation_data_inputs = np.zeros((self.nr_validation_data,
+        #                                             self.input_dimension),
+        #                                            dtype=DEFAULT_NP_DATA_DTYPE)
+        #     self.validation_data_outputs = np.zeros((self.nr_validation_data,
+        #                                              self.output_dimension),
+        #                                             dtype=DEFAULT_NP_DATA_DTYPE)
+
+        # if self.nr_test_data > 0:
+        #     self.test_data_inputs = np.zeros((self.nr_test_data,
+        #                                       self.input_dimension),
+        #                                      dtype=DEFAULT_NP_DATA_DTYPE)
+        #     self.test_data_outputs = np.zeros((self.nr_test_data,
+        #                                        self.output_dimension),
+        #                                       dtype=DEFAULT_NP_DATA_DTYPE)
+
+    def __load_data(self, function, data_type):
+        """
+        Load data into the appropriate arrays.
+
+        Also transforms them into torch tensors.
+
+        Parameters
+        ----------
+        function : string
+            Can be "tr", "va" or "te.
+        data_type : string
+            Can be "input" or "output".
+        """
+        raise Exception("Shouldn't be used")
 
     def __build_datasets(self):
         """Build the DataSets that are used during training."""
@@ -438,4 +490,107 @@ class DataHandlerGraph(DataHandlerBase):
     ######################
     # Not implemented yet.
     
+    def _parametrize_scalers(self):
+        """Use the training data to parametrize the DataScalers."""
+        ##################
+        # Inputs.
+        ##################
+
+        # If we do lazy loading, we have to iterate over the files one at a
+        # time and add them to the fit, i.e. incrementally updating max/min
+        # or mean/std. If we DON'T do lazy loading, we can simply load the
+        # training data (we will need it later anyway) and perform the
+        # scaling. This should save some performance.
+
+        if self.parameters.use_lazy_loading:
+            self.input_data_scaler.start_incremental_fitting()
+            # We need to perform the data scaling over the entirety of the
+            # training data.
+            for snapshot in self.parameters.snapshot_directories_list:
+                # Data scaling is only performed on the training data sets.
+                if snapshot.snapshot_function == "tr":
+                    if snapshot.snapshot_type == "numpy":
+                        tmp = self.descriptor_calculator. \
+                            read_from_numpy_file(os.path.join(snapshot.input_npy_directory,
+                                                              snapshot.input_npy_file),
+                                                 units=snapshot.input_units)
+                    elif snapshot.snapshot_type == "openpmd":
+                        tmp = self.descriptor_calculator. \
+                            read_from_openpmd_file(os.path.join(snapshot.input_npy_directory,
+                                                                snapshot.input_npy_file))
+                    else:
+                        raise Exception("Unknown snapshot file type.")
+
+                    # The scalers will later operate on torch Tensors so we
+                    # have to make sure they are fitted on
+                    # torch Tensors as well. Preprocessing the numpy data as
+                    # follows does NOT load it into memory, see
+                    # test/tensor_memory.py
+                    tmp = np.array(tmp)
+                    if tmp.dtype != DEFAULT_NP_DATA_DTYPE:
+                        tmp = tmp.astype(DEFAULT_NP_DATA_DTYPE)
+                    tmp = tmp.reshape([snapshot.grid_size,
+                                       self.input_dimension])
+                    tmp = torch.from_numpy(tmp).float()
+                    self.input_data_scaler.incremental_fit(tmp)
+
+            self.input_data_scaler.finish_incremental_fitting()
+
+        else:
+            self.__load_data("training", "inputs")
+            self.input_data_scaler.fit(self.training_data_inputs)
+
+        printout("Input scaler parametrized.", min_verbosity=1)
+
+        ##################
+        # Output.
+        ##################
+
+        # If we do lazy loading, we have to iterate over the files one at a
+        # time and add them to the fit,
+        # i.e. incrementally updating max/min or mean/std.
+        # If we DON'T do lazy loading, we can simply load the training data
+        # (we will need it later anyway)
+        # and perform the scaling. This should save some performance.
+
+        if self.parameters.use_lazy_loading:
+            i = 0
+            self.output_data_scaler.start_incremental_fitting()
+            # We need to perform the data scaling over the entirety of the
+            # training data.
+            for snapshot in self.parameters.snapshot_directories_list:
+                # Data scaling is only performed on the training data sets.
+                if snapshot.snapshot_function == "tr":
+                    if snapshot.snapshot_type == "numpy":
+                        tmp = self.target_calculator.\
+                            read_from_numpy_file(os.path.join(snapshot.output_npy_directory,
+                                                              snapshot.output_npy_file),
+                                                 units=snapshot.output_units)
+                    elif snapshot.snapshot_type == "openpmd":
+                        tmp = self.target_calculator. \
+                            read_from_openpmd_file(os.path.join(snapshot.output_npy_directory,
+                                                                snapshot.output_npy_file))
+                    else:
+                        raise Exception("Unknown snapshot file type.")
+
+                    # The scalers will later operate on torch Tensors so we
+                    # have to make sure they are fitted on
+                    # torch Tensors as well. Preprocessing the numpy data as
+                    # follows does NOT load it into memory, see
+                    # test/tensor_memory.py
+                    tmp = np.array(tmp)
+                    if tmp.dtype != DEFAULT_NP_DATA_DTYPE:
+                        tmp = tmp.astype(DEFAULT_NP_DATA_DTYPE)
+                    tmp = tmp.reshape([snapshot.grid_size,
+                                       self.output_dimension])
+                    tmp = torch.from_numpy(tmp).float()
+                    self.output_data_scaler.incremental_fit(tmp)
+                i += 1
+            self.output_data_scaler.finish_incremental_fitting()
+
+        else:
+            self.__load_data("training", "outputs")
+            self.output_data_scaler.fit(self.training_data_outputs)
+
+        printout("Output scaler parametrized.", min_verbosity=1)  
     

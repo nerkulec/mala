@@ -267,7 +267,7 @@ class ParametersNetwork(ParametersBase):
         # for transformer net
         self.dropout = 0.1
         self.num_heads = 4
-        self.channels_div = 2
+        # self.channels_div = 2
 
 
 class ParametersDescriptors(ParametersBase):

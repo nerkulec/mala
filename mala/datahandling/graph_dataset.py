@@ -41,19 +41,19 @@ class GraphDataset(Dataset):
     for i in range(len(self.ion_graphs)):
       self.ion_graphs[i].ndata['feature'] = torch.ones((n_atoms, 1, 1), dtype=torch.float32)
 
-    self.ldos_graphs = [
-      get_ldos_graphs(
-        input_path, ldos_batch_size, n_closest_ldos,
-        n_batches=n_batches
-      ) for input_path in tqdm(input_paths)
-    ]
-    self.n_ldos_batches = len(self.ldos_graphs[0])
-
+    self.ldos_graphs = []
     self.grid_sizes = []
 
-    for list_i, ldos_path in enumerate(tqdm(ldos_paths)):
+    for list_i, (ldos_path, input_path) in enumerate(tqdm(zip(ldos_paths, input_paths))):
       ldos = np.load(ldos_path)
       ldos_shape = ldos.shape
+
+      self.ldos_graphs.append(
+        get_ldos_graphs(
+          input_path, ldos_batch_size, n_closest_ldos,
+          n_batches=n_batches, ldos_shape=ldos_shape
+        )
+      )
 
       ldos_size = np.prod(ldos_shape[:-1])
       self.grid_size = ldos_size
@@ -61,7 +61,8 @@ class GraphDataset(Dataset):
 
       self.ldos_dim = ldos_shape[-1]
       ldos = ldos.reshape((-1, ldos_shape[-1]))
-      for j in range(self.n_ldos_batches):
+      self.n_ldos_batches = len(self.ldos_graphs[0])
+      for j in range(len(self.ldos_graphs[list_i])):
         ldos_batch = torch.tensor(
           ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
         )
@@ -94,5 +95,5 @@ class GraphDataset(Dataset):
     return ion_graph, ldos_graph
 
   def __len__(self):
-    return self.n_snapshots*self.n_ldos_batches
+    return sum(len(ldos_graph) for ldos_graph in self.ldos_graphs)
   

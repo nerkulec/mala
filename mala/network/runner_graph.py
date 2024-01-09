@@ -1,4 +1,4 @@
-"""RunnerGraph class for running networks."""
+"""RunnerGraph class for running Graph networks."""
 import os
 from zipfile import ZipFile, ZIP_STORED
 
@@ -81,7 +81,8 @@ class RunnerGraph:
         oscaler_file = run_name + ".oscaler.pkl"
         params_file = run_name + ".params.json"
         if save_runner:
-            optimizer_file = run_name+".optimizer.pth"
+            decoder_optimizer_file = run_name+".decoder_optimizer.pth"
+            encoder_optimizer_file = run_name+".encoder_optimizer.pth"
 
         self.parameters_full.save(os.path.join(save_path, params_file))
         self.network.save_network(os.path.join(save_path, model_file))
@@ -91,7 +92,7 @@ class RunnerGraph:
 
         files = [model_file, iscaler_file, oscaler_file, params_file]
         if save_runner:
-            files += [optimizer_file]
+            files += [decoder_optimizer_file, encoder_optimizer_file]
         if zip_run:
             if additional_calculation_data is not None:
                 additional_calculation_file = run_name+".info.json"

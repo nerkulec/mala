@@ -13,7 +13,7 @@ import torch
 from mala.common.parameters import ParametersRunning
 from mala.network.network import Network
 from mala.datahandling.data_scaler import DataScaler
-from mala.datahandling.data_handler import DataHandler
+from mala.datahandling.data_handler_mlp import DataHandlerMLP
 from mala import Parameters
 
 
@@ -187,10 +187,10 @@ class Runner:
                                                 loaded_network)
         loaded_iscaler = DataScaler.load_from_file(loaded_iscaler)
         loaded_oscaler = DataScaler.load_from_file(loaded_oscaler)
-        new_datahandler = DataHandler(loaded_params,
-                                      input_data_scaler=loaded_iscaler,
-                                      output_data_scaler=loaded_oscaler,
-                                      clear_data=(not prepare_data))
+        new_datahandler = DataHandlerMLP(
+            loaded_params, input_data_scaler=loaded_iscaler,
+            output_data_scaler=loaded_oscaler, clear_data=(not prepare_data)
+        )
         if loaded_info is not None:
             new_datahandler.target_calculator.\
                 read_additional_calculation_data(loaded_info,

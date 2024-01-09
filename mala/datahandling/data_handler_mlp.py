@@ -179,7 +179,7 @@ class DataHandlerMLP(DataHandler):
         # Parametrize the scalers, if needed.
         if reparametrize_scaler:
             printout("Initializing the data scalers.", min_verbosity=1)
-            self.__parametrize_scalers()
+            self._parametrize_scalers()
             printout("Data scalers initialized.", min_verbosity=0)
         elif self.parameters.use_lazy_loading is False and \
                 self.nr_training_data != 0:
@@ -436,7 +436,7 @@ class DataHandlerMLP(DataHandler):
             raise Exception("Wrong parameter for data splitting provided.")
 
         if not self.parameters.use_lazy_loading:
-            self.__allocate_arrays()        
+            self.__allocate_arrays()
 
         # Reordering the lists.
         snapshot_order = {'tr': 0, 'va': 1, 'te': 2}
@@ -709,7 +709,7 @@ class DataHandlerMLP(DataHandler):
     # Scaling
     ######################
 
-    def __parametrize_scalers(self):
+    def _parametrize_scalers(self):
         """Use the training data to parametrize the DataScalers."""
         ##################
         # Inputs.

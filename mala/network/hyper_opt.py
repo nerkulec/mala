@@ -71,8 +71,9 @@ class HyperOpt(ABC):
         self.objective = ObjectiveBase(self.params, self.data_handler)
         self.use_pkl_checkpoints = use_pkl_checkpoints
 
-    def add_hyperparameter(self, opttype="float", name="", low=0, high=0,
-                           choices=None):
+    def add_hyperparameter(
+            self, opttype="float", name="", low=0, high=0,
+            log=False, choices=None):
         """
         Add a hyperparameter to the current investigation.
 
@@ -113,6 +114,7 @@ class HyperOpt(ABC):
                                name=name,
                                low=low,
                                high=high,
+                               log=log,
                                choices=choices))
 
     def clear_hyperparameters(self):
