@@ -248,7 +248,7 @@ class Trainer(Runner):
                  min_verbosity=1)
         if self.data.test_data_sets:
             printout("Initial Guess - test data loss: ", tloss,
-                     min_verbosity=1)
+                     min_verbosity=1) # Why?
 
         # Save losses for later use.
         self.initial_validation_loss = vloss
