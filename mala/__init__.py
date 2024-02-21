@@ -8,7 +8,7 @@ predict LDOS and postprocess LDOS into energies (and forces, soon).
 from .version import __version__
 from .common import Parameters, printout, check_modules
 from .descriptors import Bispectrum, Descriptor, AtomicDensity
-from .datahandling import DataHandler, DataHandlerGraph, DataScaler, DataConverter, \
+from .datahandling import DataHandler, DataScaler, DataConverter, \
     Snapshot, DataShuffler
 from .network import Network, Tester, TesterGraph, Trainer, TrainerGraph, HyperOpt, \
     HyperOptOptuna, HyperOptNASWOT, HyperOptOAT, Predictor, \

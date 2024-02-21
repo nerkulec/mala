@@ -5,10 +5,10 @@ import numpy as np
 
 from mala.common.parameters import ParametersData, Parameters
 from mala.common.parallelizer import printout
-from mala.datahandling.data_handler_base import DataHandlerBase
+from mala.datahandling.data_handler import DataHandler
 
 
-class DataShuffler(DataHandlerBase):
+class DataShuffler(DataHandler):
     """
     Mixes data between snapshots for improved lazy-loading training.
 

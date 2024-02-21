@@ -7,7 +7,7 @@ from .graph import get_ion_graph, get_ldos_graphs
 from se3_transformer.model.basis import get_basis, update_basis_with_fused
 from se3_transformer.model.transformer import get_populated_edge_features
 
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 
 class GraphDataset(Dataset):
   def __init__(
@@ -62,7 +62,7 @@ class GraphDataset(Dataset):
       self.ldos_dim = ldos_shape[-1]
       ldos = ldos.reshape((-1, ldos_shape[-1]))
       self.n_ldos_batches = len(self.ldos_graphs[0])
-      for j in range(len(self.ldos_graphs[list_i])):
+      for j in trange(len(self.ldos_graphs[list_i])):
         ldos_batch = torch.tensor(
           ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
         )

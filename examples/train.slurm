@@ -6,9 +6,9 @@
 #SBATCH --gres=gpu:4
 #SBATCH --time=48:00:00
 #SBATCH --mem=MaxMemPerNode
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=128
 #SBATCH -A casus
-#SBATCH -p casus
+#SBATCH -p casus_a100
 
 source ~/jupyter.profile
 

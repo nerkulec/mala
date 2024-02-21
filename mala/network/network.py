@@ -639,7 +639,7 @@ class SE3Encoder(Network):
             channels_div=channels_div,
             max_degree=1,
             fuse_level=ConvSE3FuseLevel.FULL,
-            low_memory=False, # ! TODO: CHANGE THIS FOR PERFORMANCE
+            low_memory=False,
         )
         self.hidden_layers_ = []
         for _ in range(len(self.params.layer_sizes) - 2):
@@ -651,7 +651,7 @@ class SE3Encoder(Network):
                 channels_div=channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=False, # ! TODO: CHANGE THIS FOR PERFORMANCE
+                low_memory=False,
             ))
         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
         self.to(self.params._configuration["device"])
