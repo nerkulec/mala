@@ -35,32 +35,41 @@ parameters.data.use_graph_data_set = True
 # Add and prepare snapshots for training.
 ####################
 
+# Subset of dataset
+# parameters.data.n_batches = 100 # ! Only for testing
+
 data_handler = mala.DataHandler(parameters)
+
+# 44579 / 81920 MB VRAM
+# 559   / 3930  GB RAM
+
+pressure = 40
+temperature = 700
 
 for i in range(1):
     data_handler.add_snapshot(
         f'H_snapshot{i}.pw.scf.in',
-        f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/40GPa/700K/snapshot{i}',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/{pressure}GPa/{temperature}K/snapshot{i}',
         f'H_snapshot{i}.out.npy',
-        f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/40GPa/700K',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/{pressure}GPa/{temperature}K',
         'tr'
     )
 for i in range(1):
     data_handler.add_snapshot(
         f'H_snapshot{i}.pw.scf.in',
-        f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/40GPa/700K/snapshot{i}',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/{pressure}GPa/{temperature}K/snapshot{i}',
         f'H_snapshot{i}.out.npy',
-        f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/40GPa/700K',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/{pressure}GPa/{temperature}K',
         'va'
     )
-# for i in range(1):
-#     data_handler.add_snapshot(
-#         f'H_snapshot{i}.pw.scf.in',
-#         f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/40GPa/700K/snapshot{i}',
-#         f'H_snapshot{i}.out.npy',
-#         f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/40GPa/700K',
-#         'te'
-#     )
+for i in range(1):
+    data_handler.add_snapshot(
+        f'H_snapshot{i}.pw.scf.in',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/snapshots/{pressure}GPa/{temperature}K/snapshot{i}',
+        f'H_snapshot{i}.out.npy',
+        f'/bigdata/casus/wdm/Bartek_H2/H256/ldos/{pressure}GPa/{temperature}K',
+        'te'
+    )
 
 data_handler.prepare_data()
 printout("Read data: DONE.")

@@ -626,7 +626,7 @@ class SE3Encoder(Network):
         self.hidden_size = params.network.layer_sizes[1]
 
         input_fiber  = Fiber({'0': 1})
-        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size}) # improve this
         edge_fiber   = Fiber({})
 
         channels_div = int(np.sqrt(self.params.num_heads))

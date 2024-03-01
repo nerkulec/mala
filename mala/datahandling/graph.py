@@ -10,6 +10,8 @@ import dgl
 import torch
 
 from functools import lru_cache
+
+from mala.common.parallelizer import printout
 from .utils import pickle_cache
 
 
@@ -107,6 +109,8 @@ def get_ion_graph(filename, n_closest=8):
   periodic_graph = get_periodic_graph(graph_repeated_positions, cartesian_positions)
   return periodic_graph
 
+warned_about_n_batches = False
+
 # TODO: make the graphs uni-bipartite
 # @lru_cache(maxsize=1000)
 # @pickle_cache
@@ -121,7 +125,9 @@ def get_ldos_graphs(
   cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1])
   # ! TEMPORARY
   if n_batches is not None:
-    raise NotImplementedError
+    if not warned_about_n_batches:
+      printout("WARNING: Using 'n_batches' should be only used for testing", 1)
+      warned_about_n_batches = True
     cartesian_ldos_positions = cartesian_ldos_positions[:ldos_batch_size*n_batches]
 
   cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)

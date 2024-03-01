@@ -604,8 +604,8 @@ class ParametersData(ParametersBase):
         self.sample_ratio = 0.5
         self.use_fast_tensor_data_set = False
         self.use_graph_data_set = False
-        self.n_closest_ions = 16
-        self.n_closest_ldos = 64
+        self.n_closest_ions = 8
+        self.n_closest_ldos = 16
         self.n_batches = None
         self.shuffling_seed = None
 
