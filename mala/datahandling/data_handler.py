@@ -1405,6 +1405,13 @@ class DataHandlerGraph(DataHandler):
             # As we are not actually interested in the number of snapshots,
             # but in the number of datasets, we also need to multiply by that.
             for snapshot in self.parameters.snapshot_directories_list:
+                # open file
+                ldos = np.load(os.path.join(
+                    snapshot.output_npy_directory,
+                    snapshot.output_npy_file
+                ))
+                snapshot.grid_dimensions = list(ldos.shape[:3])
+                snapshot.grid_size = int(np.prod(snapshot.grid_dimensions))
                 if snapshot.snapshot_function == "tr":
                     self.nr_training_snapshots += 1
                     # self.nr_training_data += snapshot.grid_size

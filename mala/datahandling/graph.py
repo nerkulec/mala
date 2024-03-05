@@ -125,6 +125,7 @@ def get_ldos_graphs(
   cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1])
   # ! TEMPORARY
   if n_batches is not None:
+    global warned_about_n_batches
     if not warned_about_n_batches:
       printout("WARNING: Using 'n_batches' should be only used for testing", 1)
       warned_about_n_batches = True

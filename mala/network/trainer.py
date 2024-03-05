@@ -1343,6 +1343,9 @@ class TrainerGraph(RunnerGraph):
                         graph_grid = graph_grid.to(
                             self.parameters._configuration["device"], non_blocking=True
                         )
+                        graph_ions = graph_ions.to(
+                            self.parameters._configuration["device"], non_blocking=True
+                        ) # ? Is this necessary?
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
@@ -1436,14 +1439,17 @@ class TrainerGraph(RunnerGraph):
             # summary_writer tensor board
             if self.parameters.visualisation:
                 self.tensor_board.add_scalars(
-                    'Loss', {'validation': vloss}, total_batch_id
+                    'Loss', {
+                        f'validation_{self.parameters.during_training_metric}': vloss
+                    }, total_batch_id
                 )
-                if self.parameters.visualisation == 2:
-                    for name, param in self.network.named_parameters():
-                        self.tensor_board.add_histogram(name, param, epoch)
-                        self.tensor_board.add_histogram(
-                            f'{name}.grad', param.grad, epoch
-                        )
+                # Not working for now
+                # if self.parameters.visualisation >= 2:
+                #     for name, param in self.network.named_parameters():
+                #         self.tensor_board.add_histogram(name, param, epoch)
+                #         self.tensor_board.add_histogram(
+                #             f'{name}.grad', param.grad, epoch
+                #         )
                 self.tensor_board.close()
 
             if self.parameters._configuration["gpu"]:
@@ -1767,7 +1773,7 @@ class TrainerGraph(RunnerGraph):
         if self.parameters._configuration["gpu"]:
             if self.parameters.use_graphs and self.train_graph is None:
                 # ! Test this out
-                raise Exception("Not tested for now")
+                # raise Exception("Not tested for now")
                 printout("Capturing CUDA graph for training.", min_verbosity=2)
                 s = torch.cuda.Stream()
                 s.wait_stream(torch.cuda.current_stream())
@@ -2123,7 +2129,7 @@ class TrainerGraph(RunnerGraph):
                                                          optimal_batch_size)
 
                     actual_outputs, predicted_outputs = self._forward_entire_snapshot(
-                        snapshot_number, data_sets[0], data_set_type[0:2],
+                        snapshot_number-offset_snapshots, data_sets[0], data_set_type[0:2],
                         number_of_batches_per_snapshot, optimal_batch_size
                     )
 

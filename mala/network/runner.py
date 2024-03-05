@@ -16,6 +16,7 @@ from mala.datahandling.data_scaler import DataScaler
 from mala.datahandling.data_handler import DataHandler
 from mala import Parameters
 
+from tqdm.auto import tqdm, trange
 
 class Runner:
     def __new__(cls, params, *args, **kwargs):

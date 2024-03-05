@@ -66,7 +66,7 @@ class Tester:
         self.number_of_batches_per_snapshot = 0
         self.observables_to_test = observables_to_test
         self.output_format = output_format
-        if self.output_format != "list" and self.output_format == "mae":
+        if self.output_format != "list" and self.output_format != "mae":
             raise Exception("Wrong output format for testing selected.")
         self.target_calculator = data.target_calculator
 
@@ -345,10 +345,10 @@ class TesterMLP(Tester, Runner):
         Runner.__init__(self, params, network, data)
 
 
-class TesterGraph(Tester, RunnerGraph):
+class TesterGraph(Tester, Runner):
     def __init__(self, params, network, data, observables_to_test=["ldos"],
                  output_format="list"):
         """Initialize the TesterGraph class.
         """
         Tester.__init__(self, params, network, data, observables_to_test, output_format)
-        RunnerGraph.__init__(self, params, network, data)
+        Runner.__init__(self, params, network, data)
