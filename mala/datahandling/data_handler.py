@@ -27,6 +27,7 @@ from mala.datahandling.lazy_load_dataset_clustered import LazyLoadDatasetCluster
 from mala.datahandling.lazy_load_dataset_single import LazyLoadDatasetSingle
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 from mala.datahandling.graph_dataset import GraphDataset
+from mala.datahandling.lazy_graph_dataset import LazyGraphDataset
 
 
 class DataHandler(ABC):
@@ -1127,14 +1128,15 @@ class DataHandlerGraph(DataHandler):
     # Constructors
     ##############################
 
-    def __init__(self, parameters: Parameters, target_calculator=None,
-                 descriptor_calculator=None, input_data_scaler=None,
-                 output_data_scaler=None, clear_data=True,
-                 ):
-        super(DataHandlerGraph, self).__init__(parameters,
-                                          target_calculator=target_calculator,
-                                          descriptor_calculator=
-                                          descriptor_calculator)
+    def __init__(
+        self, parameters: Parameters, target_calculator=None,
+        descriptor_calculator=None, input_data_scaler=None,
+        output_data_scaler=None, clear_data=True,
+    ):
+        super(DataHandlerGraph, self).__init__(
+            parameters, target_calculator=target_calculator,
+            descriptor_calculator=descriptor_calculator
+        )
         self.params = parameters
 
         # Data will be scaled per user specification.            
@@ -1329,6 +1331,7 @@ class DataHandlerGraph(DataHandler):
         This applies only to the training data set. For the validation and
         test set it does not matter.
         """
+        raise Exception("Mixing not implemented for graph data.")
         if self.parameters.use_lazy_loading:
             for dset in self.training_data_sets:
                 dset.mix_datasets()
@@ -1498,9 +1501,6 @@ class DataHandlerGraph(DataHandler):
 
     def __build_datasets(self):
         """Build the DataSets that are used during training."""
-        if self.parameters.use_lazy_loading:
-            raise Exception("Lazy loading not supported in this mode")
-
         if self.parameters.use_clustering:
             raise Exception("Clustering not supported in this mode")
         
@@ -1524,13 +1524,22 @@ class DataHandlerGraph(DataHandler):
                     train_ldos_paths.append(ldos_path)
                     train_input_paths.append(input_path)
 
-            self.training_data_sets.append(GraphDataset(
-                self.params.data.n_closest_ions,
-                self.params.data.n_closest_ldos,
-                self.params.running.ldos_grid_batch_size,
-                ldos_paths=train_ldos_paths, input_paths=train_input_paths,
-                n_batches=self.params.data.n_batches,
-            ))
+            if self.parameters.use_lazy_loading:
+                self.training_data_sets.append(LazyGraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=train_ldos_paths, input_paths=train_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
+            else:
+                self.training_data_sets.append(GraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=train_ldos_paths, input_paths=train_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
             self.output_dimension = self.training_data_sets[0].ldos_dim # Probably not the right place to do it
 
         if self.nr_validation_snapshots != 0:
@@ -1543,12 +1552,22 @@ class DataHandlerGraph(DataHandler):
                     validation_ldos_paths.append(ldos_path)
                     validation_input_paths.append(input_path)
 
-            self.validation_data_sets.append(GraphDataset(
-                self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
-                self.params.running.ldos_grid_batch_size,
-                ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                n_batches=self.params.data.n_batches,
-            ))
+            if self.parameters.use_lazy_loading:
+                self.validation_data_sets.append(LazyGraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
+            else:
+                self.validation_data_sets.append(GraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
             self.output_dimension = self.validation_data_sets[0].ldos_dim # Probably not the right place to do it
 
         if self.nr_test_snapshots != 0:
@@ -1561,12 +1580,22 @@ class DataHandlerGraph(DataHandler):
                     test_ldos_paths.append(ldos_path)
                     test_input_paths.append(input_path)
 
-            self.test_data_sets.append(GraphDataset(
-                self.params.data.n_closest_ions, self.params.data.n_closest_ldos,
-                self.params.running.ldos_grid_batch_size,
-                ldos_paths=test_ldos_paths, input_paths=test_input_paths,
-                n_batches=self.params.data.n_batches,
-            ))
+            if self.parameters.use_lazy_loading:
+                self.test_data_sets.append(LazyGraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=test_ldos_paths, input_paths=test_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
+            else:
+                self.test_data_sets.append(GraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    ldos_paths=test_ldos_paths, input_paths=test_input_paths,
+                    n_batches=self.params.data.n_batches,
+                ))
             self.output_dimension = self.test_data_sets[0].ldos_dim # Probably not the right place to do it
     # Scaling
     ######################

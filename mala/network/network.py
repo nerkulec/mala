@@ -619,7 +619,8 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
-class SE3Encoder(Network):
+
+class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
     """Initialize this network as a SE(3)-Equivariant encoder graph neural network."""
     def __init__(self, params):
         super(SE3Encoder, self).__init__(params)
@@ -708,8 +709,6 @@ class SE3Decoder(nn.Module):
             self.params = params.network
             self.loss_func = functional.mse_loss
 
-            channels_div = 1
-
             self.hidden_size = params.network.layer_sizes[1]
             self.ldos_size = params.targets.ldos_gridsize
 
@@ -722,7 +721,7 @@ class SE3Decoder(nn.Module):
                 fiber_out=ldos_fiber,
                 fiber_edge=edge_fiber,
                 num_heads=1, # Output layer has to have 1 head
-                channels_div=channels_div,
+                channels_div=1,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=False,

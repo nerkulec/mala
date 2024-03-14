@@ -645,7 +645,7 @@ class RunnerGraph:
         predicted_outputs : numpy.ndarray
             Precicted outputs for snapshot.
         """
-        grid_size = data_set.grid_size
+        grid_size = self.data.parameters.snapshot_directories_list[snapshot_number].grid_size
 
         # TODO: check if this makes sense
         actual_outputs = np.zeros((grid_size, self.data.output_dimension))
@@ -669,7 +669,7 @@ class RunnerGraph:
             #         graph_grid.ndata['target'][graph_ions.num_nodes():].to('cpu'), as_numpy=True)
 
         predicted_outputs = np.zeros((grid_size, self.data.output_dimension))
-        for i in trange(0, data_set.n_ldos_batches):
+        for i in trange(0, data_set.n_ldos_batches, desc="Predicting LDOS in batches", disable=self.parameters.verbosity < 2):
             graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches + i]
 
             graph_grid = graph_grid.to(
@@ -709,7 +709,7 @@ class RunnerGraph:
         data_per_snapshot / batch_size will result in an integer division
         without any residual value.
         """
-        # Does nothing
+        # Does nothing <3
         new_batch_size = batchsize
         return new_batch_size
 

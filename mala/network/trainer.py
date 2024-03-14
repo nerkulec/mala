@@ -311,7 +311,10 @@ class TrainerMLP(Runner):
                 t0 = time.time()
                 batchid = 0
                 for loader in self.training_data_loaders:
-                    for (inputs, outputs) in tqdm(loader, desc="training", disable=self.parameters_full.verbosity < 2):
+                    for (inputs, outputs) in tqdm(
+                        loader, desc="training", disable=self.parameters_full.verbosity < 2,
+                        total=len(loader)
+                    ):
 
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
@@ -797,7 +800,10 @@ class TrainerMLP(Runner):
                     tsample = time.time()
                     batchid = 0
                     for loader in data_loaders:
-                        for (x, y) in tqdm(loader, desc="validation", disable=self.parameters_full.verbosity < 2):
+                        for (x, y) in tqdm(
+                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
+                            total=len(loader)
+                        ):
                             x = x.to(self.parameters._configuration["device"],
                                      non_blocking=True)
                             y = y.to(self.parameters._configuration["device"],
@@ -885,7 +891,10 @@ class TrainerMLP(Runner):
                         (grid_size, self.data.output_dimension))
                     last_start = 0
 
-                    for (x, y) in tqdm(loader, desc="validation", disable=self.parameters_full.verbosity < 2):
+                    for (x, y) in tqdm(
+                        loader, desc="validation", disable=self.parameters_full.verbosity < 2,
+                        total=len(loader)
+                    ):
 
                         x = x.to(self.parameters._configuration["device"])
                         length = int(x.size()[0])
@@ -1319,7 +1328,10 @@ class TrainerGraph(RunnerGraph):
                     embedding_extended = None
                     embedding_step_counter = 0
 
-                    for graph_ions, graph_grid in tqdm(loader, desc="training", disable=self.parameters_full.verbosity < 2):
+                    for graph_ions, graph_grid in tqdm(
+                        loader, desc="training", disable=self.parameters_full.verbosity < 2,
+                        total=len(loader)
+                    ):
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
                         if batchid == self.parameters.profiler_range[1]:
@@ -1693,7 +1705,7 @@ class TrainerGraph(RunnerGraph):
             do_shuffle = False
 
         # Prepare data loaders.(look into mini-batch size)
-        if isinstance(self.data.training_data_sets[0], GraphDataset):
+        if self.parameters_full.data.use_graph_data_set:
             # self.training_data_loaders.append(GraphDataLoader(
             #     self.data.training_data_sets[0], batch_size=self.parameters.mini_batch_size,
             #     sampler=self.train_sampler, **kwargs,
@@ -1728,7 +1740,7 @@ class TrainerGraph(RunnerGraph):
                                                              sampler=self.train_sampler,
                                                              **kwargs,
                                                              shuffle=do_shuffle))
-        if isinstance(self.data.validation_data_sets[0], GraphDataset):
+        if self.parameters_full.data.use_graph_data_set:
             self.validation_data_loaders.append(GraphDataLoader(self.data.validation_data_sets[0],
                                                                 batch_size=None,
                                                                 sampler=
@@ -1751,7 +1763,7 @@ class TrainerGraph(RunnerGraph):
                                                                self.validation_sampler,
                                                                **kwargs))
         if self.data.test_data_sets:
-            if isinstance(self.data.test_data_sets[0], GraphDataset):
+            if self.parameters_full.data.use_graph_data_set:
                 self.test_data_loaders.append(GraphDataLoader(self.data.test_data_sets[0],
                                                               batch_size=None,
                                                               sampler=self.test_sampler,
@@ -1938,7 +1950,10 @@ class TrainerGraph(RunnerGraph):
                         
                         embeddings = {}
 
-                        for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                        for graph_ions, graph_grid in tqdm(
+                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
+                            total=len(loader)
+                        ):
                             graph_grid = graph_grid.to(
                                 self.parameters._configuration["device"], non_blocking=True
                             )
@@ -2048,7 +2063,10 @@ class TrainerGraph(RunnerGraph):
                         embeddings = {}
 
                         printout(f"Validating {validation_type} on {data_set_type} data set.")
-                        for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                        for graph_ions, graph_grid in tqdm(
+                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
+                            total=len(loader)
+                        ):
                             graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
 
                             graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
@@ -2086,7 +2104,10 @@ class TrainerGraph(RunnerGraph):
                     embeddings = {}
 
                     printout(f"Validating {validation_type} on {data_set_type} data set.")
-                    for graph_ions, graph_grid in tqdm(loader, disable=self.parameters_full.verbosity < 2):
+                    for graph_ions, graph_grid in tqdm(
+                        loader, desc="validation", disable=self.parameters_full.verbosity < 2,
+                        total=len(loader)
+                    ):
                         graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
                         
                         # TODO: check if this makes sense
@@ -2122,8 +2143,12 @@ class TrainerGraph(RunnerGraph):
                     grid_size = self.data.parameters.\
                         snapshot_directories_list[snapshot_number].grid_size
 
+                    # optimal_batch_size = self._correct_batch_size_for_testing(
+                    #     grid_size, self.parameters.mini_batch_size
+                    # ) # ?????????
+
                     optimal_batch_size = self._correct_batch_size_for_testing(
-                        grid_size, self.parameters.mini_batch_size
+                        grid_size, self.parameters.ldos_grid_batch_size
                     )
                     number_of_batches_per_snapshot = int(grid_size /
                                                          optimal_batch_size)

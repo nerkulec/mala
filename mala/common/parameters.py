@@ -598,6 +598,7 @@ class ParametersData(ParametersBase):
         self.output_rescaling_type = "None"
         self.use_lazy_loading = False
         self.use_lazy_loading_prefetch = False
+        self.retain_graphs = False
         self.use_clustering = False
         self.number_of_clusters = 40
         self.train_ratio = 0.1

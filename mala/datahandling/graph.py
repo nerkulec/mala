@@ -44,7 +44,7 @@ def get_ldos(
 ):
   ldos = np.zeros((num_snapshots, nx, ny, nz, ldos_dim), dtype=np.float32)
   
-  for i in trange(num_snapshots):
+  for i in trange(num_snapshots, desc="Loading LDOS from npy files"):
     ldos[i] = np.load(os.path.join(ldos_path, f'H_snapshot{i}.out.npy'))
   ldos = ldos.reshape((num_snapshots, -1, ldos_dim))
   return ldos
@@ -113,7 +113,7 @@ warned_about_n_batches = False
 
 # TODO: make the graphs uni-bipartite
 # @lru_cache(maxsize=1000)
-# @pickle_cache
+# @pickle_cache(folder_name='ldos_graphs')
 def get_ldos_graphs(
   filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
   n_batches=None
@@ -140,7 +140,11 @@ def get_ldos_graphs(
   cartesian_ion_positions = cell.cartesian_positions(repeated_ion_positions)
   cartesian_ion_positions = torch.tensor(cartesian_ion_positions, dtype=torch.float32)
   ldos_graphs = []
-  for i in trange(0, len(cartesian_ldos_positions), ldos_batch_size, leave=False):
+  for i in trange(
+    0, len(cartesian_ldos_positions), ldos_batch_size,
+    # leave=False, # test
+    desc="Computing LDOS graphs"
+  ):
     cartesian_ldos_positions_batch = cartesian_ldos_positions[i:i+ldos_batch_size]
     distances = torch.cdist(cartesian_ldos_positions_batch, cartesian_ion_positions)
     closest_ion_indices = torch.argsort(distances, dim=1)[:, :n_closest_ldos]

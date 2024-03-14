@@ -44,7 +44,10 @@ class GraphDataset(Dataset):
     self.ldos_graphs = []
     self.grid_sizes = []
 
-    for list_i, (ldos_path, input_path) in enumerate(tqdm(zip(ldos_paths, input_paths))):
+    for list_i, (ldos_path, input_path) in enumerate(tqdm(
+      zip(ldos_paths, input_paths),
+      desc="Loading LDOS graphs",
+    )):
       ldos = np.load(ldos_path)
       ldos_shape = ldos.shape
 
@@ -62,7 +65,7 @@ class GraphDataset(Dataset):
       self.ldos_dim = ldos_shape[-1]
       ldos = ldos.reshape((-1, ldos_shape[-1]))
       self.n_ldos_batches = len(self.ldos_graphs[0])
-      for j in trange(len(self.ldos_graphs[list_i])):
+      for j in trange(len(self.ldos_graphs[list_i]), desc="Filling LDOS graphs"):
         ldos_batch = torch.tensor(
           ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
         )
