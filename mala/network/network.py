@@ -653,7 +653,7 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
                 low_memory=False,
             ))
         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
-        self.to(self.params._configuration["device"])
+        # self.to(self.params._configuration["device"])
     
     def embed(self, graph_ions: DGLGraph):
         basis_ions = {}
@@ -724,7 +724,7 @@ class SE3Decoder(nn.Module):
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=False,
             )
-            self.to(self.params._configuration["device"])
+            # self.to(self.params._configuration["device"])
     
     def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
         basis_grid = {}

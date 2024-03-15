@@ -97,6 +97,7 @@ class LazyGraphDataset(Dataset):
     # If there is no "ldos_graphs" folder, create it
     if not os.path.exists("ldos_graphs"):
       os.makedirs("ldos_graphs")
+
     printout("Initial LDOS graph generation", min_verbosity=2)
     dataset_length = 0
     for i, ldos_path in tqdm(
@@ -106,6 +107,7 @@ class LazyGraphDataset(Dataset):
       ldos_graphs = self._get_ldos_graphs(i)
       self.n_ldos_batches = len(ldos_graphs)
       dataset_length += len(ldos_graphs)
+    
     self.num_batches = dataset_length
       
   def _get_ldos_graphs(self, i):
