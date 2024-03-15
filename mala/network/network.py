@@ -630,14 +630,12 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
         hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size}) # improve this
         edge_fiber   = Fiber({})
 
-        channels_div = int(np.sqrt(self.params.num_heads))
-
         self.input_layer = AttentionBlockSE3(
             fiber_in=input_fiber,
             fiber_out=hidden_fiber,
             fiber_edge=edge_fiber,
             num_heads=self.params.num_heads,
-            channels_div=channels_div,
+            channels_div=self.params.channels_div,
             max_degree=1,
             fuse_level=ConvSE3FuseLevel.FULL,
             low_memory=False,
@@ -649,7 +647,7 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
                 fiber_out=hidden_fiber,
                 fiber_edge=edge_fiber,
                 num_heads=self.params.num_heads,
-                channels_div=channels_div,
+                channels_div=self.params.channels_div,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=False,

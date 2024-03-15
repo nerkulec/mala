@@ -23,15 +23,23 @@ class HashableAtoms(Atoms):
     return np.allclose(self.get_positions(), other.get_positions())
 
 
-def get_ldos_positions(cell, nx=90, ny=90, nz=60):
+def get_ldos_positions(cell, nx, ny, nz):
   ldos_positions = np.zeros((nx, ny, nz, 3), dtype=np.float32)
   # I assume ldos values are evaluated at the center of each voxel
+  # ! Test ! changing the assumption to origin
+  # for x in range(nx):
+  #   ldos_positions[x, :, :, 0] = (x+0.5)/nx
+  # for y in range(ny):
+  #   ldos_positions[:, y, :, 1] = (y+0.5)/ny
+  # for z in range(nz):
+  #   ldos_positions[:, :, z, 2] = (z+0.5)/nz
+  
   for x in range(nx):
-    ldos_positions[x, :, :, 0] = (x+0.5)/nx
+    ldos_positions[x, :, :, 0] = (x)/nx
   for y in range(ny):
-    ldos_positions[:, y, :, 1] = (y+0.5)/ny
+    ldos_positions[:, y, :, 1] = (y)/ny
   for z in range(nz):
-    ldos_positions[:, :, z, 2] = (z+0.5)/nz
+    ldos_positions[:, :, z, 2] = (z)/nz
 
   ldos_positions = ldos_positions.reshape((-1, 3))
   ldos_positions = cell.cartesian_positions(ldos_positions)
@@ -39,8 +47,8 @@ def get_ldos_positions(cell, nx=90, ny=90, nz=60):
 
 
 def get_ldos(
-  ldos_path = "/bigdata/casus/wdm/Bartek_H2/H128/ldos/",
-  num_snapshots=20, nx=90, ny=90, nz=60, ldos_dim=201
+  ldos_path,
+  num_snapshots, nx, ny, nz, ldos_dim
 ):
   ldos = np.zeros((num_snapshots, nx, ny, nz, ldos_dim), dtype=np.float32)
   
