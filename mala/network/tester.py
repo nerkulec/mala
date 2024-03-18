@@ -52,17 +52,6 @@ class Tester:
         snapshots is returned. If "mae", then the MAE across all snapshots
         will be calculated and returned.
     """
-    # def __new__(cls, params, *args, **kwargs):
-    #     if params.network.nn_type == "se3_transformer":
-    #         return TesterGraph(params, *args, **kwargs)
-    #     else:
-    #         return TesterMLP(params, *args, **kwargs)
-        
-    # def __new__(cls, params, *args, **kwargs):
-    #     if params.network.nn_type == "se3_transformer":
-    #         return super(TesterGraph, cls).__new__(cls)
-    #     else:
-    #         return super(TesterMLP, cls).__new__(cls)
     
     def __new__(cls, params, *args, **kwargs):
         if cls == Tester:

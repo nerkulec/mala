@@ -18,14 +18,6 @@ from mala import Parameters
 
 from tqdm.auto import tqdm, trange
 
-# class Runner:
-#     def __new__(cls, params, network, data, runner_dict=None, *args, **kwargs):
-#         if params.network.nn_type == "se3_transformer":
-#             return RunnerGraph(params, network, data, runner_dict)
-#         else:
-#             return RunnerMLP(params, network, data, runner_dict)
-
-
 class RunnerMLP:
     """
     Parent class for all classes that in some sense "run" the network.
@@ -196,7 +188,7 @@ class RunnerMLP:
                                                 loaded_network)
         loaded_iscaler = DataScaler.load_from_file(loaded_iscaler)
         loaded_oscaler = DataScaler.load_from_file(loaded_oscaler)
-        new_datahandler = DataHandlerMLP(
+        new_datahandler = DataHandler(
             loaded_params, input_data_scaler=loaded_iscaler,
             output_data_scaler=loaded_oscaler, clear_data=(not prepare_data)
         )
@@ -549,7 +541,7 @@ class RunnerGraph:
                                                 loaded_network)
         loaded_iscaler = DataScaler.load_from_file(loaded_iscaler)
         loaded_oscaler = DataScaler.load_from_file(loaded_oscaler)
-        new_datahandler = DataHandlerGraph(loaded_params,
+        new_datahandler = DataHandler(loaded_params,
                                       input_data_scaler=loaded_iscaler,
                                       output_data_scaler=loaded_oscaler,
                                       clear_data=(not prepare_data))
