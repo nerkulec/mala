@@ -58,12 +58,24 @@ class Tester:
     #     else:
     #         return TesterMLP(params, *args, **kwargs)
         
+    # def __new__(cls, params, *args, **kwargs):
+    #     if params.network.nn_type == "se3_transformer":
+    #         return super(TesterGraph, cls).__new__(cls)
+    #     else:
+    #         return super(TesterMLP, cls).__new__(cls)
+    
     def __new__(cls, params, *args, **kwargs):
-        if params.network.nn_type == "se3_transformer":
-            return super(TesterGraph, cls).__new__(cls)
+        if cls == Tester:
+            # Will be the case when called as mala.Tester()
+            if params.network.nn_type == "se3_transformer":
+                return super(cls, TesterGraph).__new__(TesterGraph)
+            else:
+                return super(cls, TesterMLP).__new__(TesterMLP)
         else:
-            return super(TesterMLP, cls).__new__(cls)
-            
+            # Will be the case when mala.TesterGraph or mala.TesterMLP 
+            # is called directly (e.g. when loading a model)
+            return super(Tester, cls).__new__(cls)
+
 
     def __init__(self, params, network, data, observables_to_test=["ldos"],
                  output_format="list"):

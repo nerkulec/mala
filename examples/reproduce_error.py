@@ -9,7 +9,7 @@ run_name = "repr"
 parameters = mala.Parameters()
 
 # Subset of dataset
-parameters.data.n_batches = 100 # ! Only for testing
+parameters.data.n_batches = 10 # ! Only for testing
 
 # LDOS parameters.
 parameters.targets.ldos_gridsize = 171
@@ -43,7 +43,8 @@ parameters.running.after_before_training_metric = "total_energy"
 parameters.network.nn_type = "se3_transformer"
 
 parameters.data.use_graph_data_set = True
-parameters.data.use_lazy_loading = True
+# parameters.data.use_lazy_loading = True
+parameters.data.use_lazy_loading = False
 parameters.data.retain_graphs = True
 parameters.data.n_closest_ions = 4
 parameters.data.n_closest_ldos = 8
@@ -104,7 +105,7 @@ test_data_handler.prepare_data(reparametrize_scaler=False)
 # Build and train network.
 parameters.network.layer_sizes = [
     train_data_handler.input_dimension
-] + args.hidden_layers*[args.hidden_layer_size] + [
+] + 4*[16] + [
     train_data_handler.output_dimension
 ]
 network = mala.Network(parameters)
