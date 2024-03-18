@@ -9,10 +9,10 @@ import numpy as np
 import torch
 
 from mala.common.parallelizer import printout, get_rank, barrier
-from mala.network.runner import Runner
+from mala.network.runner import RunnerMLP
 
 
-class Predictor(Runner):
+class Predictor(RunnerMLP):
     """
     A class for running predictions using a neural network.
 

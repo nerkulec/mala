@@ -1529,6 +1529,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=train_ldos_paths, input_paths=train_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))
@@ -1537,6 +1538,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=train_ldos_paths, input_paths=train_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))
@@ -1557,6 +1559,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))
@@ -1565,6 +1568,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))
@@ -1585,6 +1589,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=test_ldos_paths, input_paths=test_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))
@@ -1593,6 +1598,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.data.n_closest_ions,
                     self.params.data.n_closest_ldos,
                     self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
                     ldos_paths=test_ldos_paths, input_paths=test_input_paths,
                     n_batches=self.params.data.n_batches,
                 ))

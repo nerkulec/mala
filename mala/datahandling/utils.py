@@ -26,7 +26,7 @@ def pickle_cache(folder_name=None):
         hashed_file_name = str(hash(file_name))
         hash_len = len(hashed_file_name)
         file_name = f'{file_name[:max_file_name_len-hash_len]}_{hashed_file_name}'
-      file_name = f"{folder_name}/{file_name}.pkl"
+      file_name = f"{folder_name}/{file_name}"
       try:
         with open(file_name, 'rb') as f:
           # time the loading

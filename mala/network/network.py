@@ -627,7 +627,8 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
         self.hidden_size = params.network.layer_sizes[1]
 
         input_fiber  = Fiber({'0': 1})
-        hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size}) # improve this
+        # hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size}) # improve this
+        hidden_fiber = Fiber({str(i): self.hidden_size for i in range(self.params.max_degree+1)})
         edge_fiber   = Fiber({})
 
         self.input_layer = AttentionBlockSE3(
@@ -636,7 +637,7 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
             fiber_edge=edge_fiber,
             num_heads=self.params.num_heads,
             channels_div=self.params.channels_div,
-            max_degree=1,
+            max_degree=self.params.max_degree,
             fuse_level=ConvSE3FuseLevel.FULL,
             low_memory=False,
         )
@@ -677,17 +678,24 @@ class SE3Encoder(Network): # ! USE HIGHER MAX DEGREE
 
     def extend_embedding(self, graph_embedding: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
         n_grid = graph_grid.number_of_nodes()-graph_ions.number_of_nodes()
+        # graph_embedding_extended = {
+        #     '0':torch.cat([
+        #         graph_embedding['0'],
+        #         torch.zeros((n_grid, self.hidden_size, 1),
+        #         dtype=torch.float32, device=graph_ions.device, )
+        #     ]),
+        #     '1':torch.cat([
+        #         graph_embedding['1'],
+        #         torch.zeros((n_grid, self.hidden_size, 3),
+        #         dtype=torch.float32, device=graph_ions.device)
+        #     ])
+        # }
         graph_embedding_extended = {
-            '0':torch.cat([
-                graph_embedding['0'],
-                torch.zeros((n_grid, self.hidden_size, 1),
+            str(i):torch.cat([
+                graph_embedding[str(i)],
+                torch.zeros((n_grid, self.hidden_size, 2*i+1),
                 dtype=torch.float32, device=graph_ions.device, )
-            ]),
-            '1':torch.cat([
-                graph_embedding['1'],
-                torch.zeros((n_grid, self.hidden_size, 3),
-                dtype=torch.float32, device=graph_ions.device)
-            ])
+            ], dim=0) for i in range(self.params.max_degree+1)
         }
         return graph_embedding_extended
     
@@ -710,7 +718,8 @@ class SE3Decoder(nn.Module):
             self.hidden_size = params.network.layer_sizes[1]
             self.ldos_size = params.targets.ldos_gridsize
 
-            hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+            # hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
+            hidden_fiber = Fiber({str(i): self.hidden_size for i in range(self.params.max_degree+1)})
             ldos_fiber   = Fiber({'0': self.ldos_size})
             edge_fiber   = Fiber({})
 

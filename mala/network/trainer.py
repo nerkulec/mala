@@ -19,7 +19,7 @@ from mala.common.parameters import printout
 from mala.common.parallelizer import parallel_warn
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 from mala.network.network import Network
-from mala.network.runner import Runner, RunnerGraph
+from mala.network.runner import RunnerMLP, RunnerGraph
 from mala.datahandling.lazy_load_dataset_single import LazyLoadDatasetSingle
 from mala.datahandling.multi_lazy_load_data_loader import \
     MultiLazyLoadDataLoader
@@ -38,7 +38,7 @@ class Trainer:
             return TrainerMLP(params, *args, **kwargs)
 
 
-class TrainerMLP(Runner):
+class TrainerMLP(RunnerMLP):
     """A class for training a neural network.
 
     Parameters
@@ -234,16 +234,17 @@ class TrainerMLP(Runner):
         ############################
 
         tloss = float("inf")
-        vloss = self.__validate_network(self.network,
-                                        "validation",
-                                        self.parameters.
-                                        after_before_training_metric)
+        vloss = float("inf")
+        # vloss = self.__validate_network(self.network,
+        #                                 "validation",
+        #                                 self.parameters.
+        #                                 after_before_training_metric)
 
-        if self.data.test_data_sets:
-            tloss = self.__validate_network(self.network,
-                                            "test",
-                                            self.parameters.
-                                            after_before_training_metric)
+        # if self.data.test_data_sets:
+        #     tloss = self.__validate_network(self.network,
+        #                                     "test",
+        #                                     self.parameters.
+        #                                     after_before_training_metric)
 
         # Collect and average all the losses from all the devices
         if self.parameters_full.use_horovod:

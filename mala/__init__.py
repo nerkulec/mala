@@ -13,7 +13,7 @@ from .datahandling import DataHandler, DataScaler, DataConverter, \
 from .network import Network, Tester, Trainer, TrainerGraph, HyperOpt, \
     HyperOptOptuna, HyperOptNASWOT, HyperOptOAT, Predictor, \
     HyperparameterOAT, HyperparameterNASWOT, HyperparameterOptuna, \
-    HyperparameterACSD, ACSDAnalyzer, Runner
+    HyperparameterACSD, ACSDAnalyzer, RunnerMLP, RunnerGraph
 from .targets import LDOS, DOS, Density, fermi_function, \
     AtomicForce, Target
 from .interfaces import MALA

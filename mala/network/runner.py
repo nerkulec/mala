@@ -18,12 +18,12 @@ from mala import Parameters
 
 from tqdm.auto import tqdm, trange
 
-class Runner:
-    def __new__(cls, params, *args, **kwargs):
-        if params.network.nn_type == "se3_transformer":
-            return RunnerGraph(params, *args, **kwargs)
-        else:
-            return RunnerMLP(params, *args, **kwargs)
+# class Runner:
+#     def __new__(cls, params, network, data, runner_dict=None, *args, **kwargs):
+#         if params.network.nn_type == "se3_transformer":
+#             return RunnerGraph(params, network, data, runner_dict)
+#         else:
+#             return RunnerMLP(params, network, data, runner_dict)
 
 
 class RunnerMLP:

@@ -16,7 +16,7 @@ from ase.io import read
 
 @lru_cache(maxsize=1)
 @pickle_cache(folder_name='ldos_graphs')
-def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, n_batches):
+def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, max_degree, n_batches):
   ldos = np.load(ldos_path)
   ldos_shape = ldos.shape
   ldos_graphs = get_ldos_graphs(
@@ -43,11 +43,11 @@ def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, n_b
       torch.zeros((ldos_batch_size, 1, 1), dtype=torch.float32)
     ], dim=0)
     basis_grid = get_basis(
-      ldos_graph.edata['rel_pos'], max_degree=1, compute_gradients=False, # Max degree already present here
+      ldos_graph.edata['rel_pos'], max_degree=max_degree, compute_gradients=False, # Max degree already present here
       use_pad_trick=False, amp=torch.is_autocast_enabled()
     )
     basis_grid = update_basis_with_fused(
-      basis_grid, max_degree=1, use_pad_trick=False, fully_fused=True # Max degree already present here
+      basis_grid, max_degree=max_degree, use_pad_trick=False, fully_fused=True # Max degree already present here
     )
     for key in basis_grid.keys():
       ldos_graph.edata['basis_'+key] = basis_grid[key]
@@ -59,11 +59,12 @@ def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, n_b
 class LazyGraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
-    ldos_paths=[], input_paths=[], n_batches=None
+    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
     self.ldos_batch_size = ldos_batch_size
+    self.max_degree = max_degree
     self.n_closest_ions = n_closest_ions
     self.n_closest_ldos = n_closest_ldos
     self.ldos_paths = ldos_paths
@@ -75,11 +76,11 @@ class LazyGraphDataset(Dataset):
 
     for graph_ions in self.ion_graphs:
       basis_ions = get_basis(
-        graph_ions.edata['rel_pos'], max_degree=1, compute_gradients=False, # ! Max degree already present here
+        graph_ions.edata['rel_pos'], max_degree=self.max_degree, compute_gradients=False, # ! Max degree already present here
         use_pad_trick=False, amp=torch.is_autocast_enabled()
       )
       basis_ions = update_basis_with_fused(
-        basis_ions, max_degree=1, use_pad_trick=False, fully_fused=True # ! Max degree already present here
+        basis_ions, max_degree=self.max_degree, use_pad_trick=False, fully_fused=True # ! Max degree already present here
       )
       for key in basis_ions.keys():
         graph_ions.edata['basis_'+key] = basis_ions[key]
@@ -114,7 +115,7 @@ class LazyGraphDataset(Dataset):
     ldos_path = self.ldos_paths[i]
     input_path = self.input_paths[i]
     ldos_graphs = load_ldos_graphs(
-      ldos_path, input_path, self.ldos_batch_size, self.n_closest_ldos, self.n_batches
+      ldos_path, input_path, self.ldos_batch_size, self.n_closest_ldos, self.max_degree, self.n_batches
     )
     self.ldos_dim = ldos_graphs[0].ndata['target'].shape[-1]
     return ldos_graphs

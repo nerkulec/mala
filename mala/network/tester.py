@@ -7,7 +7,7 @@ except ModuleNotFoundError:
 import numpy as np
 
 from mala.common.parameters import printout
-from mala.network.runner import Runner
+from mala.network.runner import RunnerMLP, RunnerGraph
 from mala.targets.ldos import LDOS
 from mala.targets.dos import DOS
 from mala.targets.density import Density
@@ -15,7 +15,7 @@ from mala.targets.density import Density
 from functools import lru_cache
 
 
-class Tester(Runner):
+class Tester:
     """
     A class for testing a neural network.
 
@@ -54,14 +54,22 @@ class Tester(Runner):
     """
     # def __new__(cls, params, *args, **kwargs):
     #     if params.network.nn_type == "se3_transformer":
-    #         return super(TesterGraph, cls).__new__(TesterGraph)
+    #         return TesterGraph(params, *args, **kwargs)
     #     else:
-    #         return super(TesterMLP, cls).__new__(TesterMLP)
+    #         return TesterMLP(params, *args, **kwargs)
+        
+    def __new__(cls, params, *args, **kwargs):
+        if params.network.nn_type == "se3_transformer":
+            return super(TesterGraph, cls).__new__(cls)
+        else:
+            return super(TesterMLP, cls).__new__(cls)
             
 
     def __init__(self, params, network, data, observables_to_test=["ldos"],
                  output_format="list"):
         # copy the parameters into the class.
+        # Runner.__init__(self, params, network, data)
+
         self.test_data_loader = None
         self.number_of_batches_per_snapshot = 0
         self.observables_to_test = observables_to_test
@@ -336,19 +344,19 @@ class Tester(Runner):
                                                   mini_batch_size)
 
 
-# class TesterMLP(Tester, Runner):
-#     def __init__(self, params, network, data, observables_to_test=["ldos"],
-#                  output_format="list"):
-#         """Initialize the Tester class.
-#         """
-#         Tester.__init__(self, params, network, data, observables_to_test, output_format)
-#         Runner.__init__(self, params, network, data)
+class TesterMLP(Tester, RunnerMLP):
+    def __init__(self, params, network, data, observables_to_test=["ldos"],
+                 output_format="list"):
+        """Initialize the Tester class.
+        """
+        Tester.__init__(self, params, network, data, observables_to_test, output_format)
+        RunnerMLP.__init__(self, params, network, data)
 
 
-# class TesterGraph(Tester, RunnerGraph):
-#     def __init__(self, params, network, data, observables_to_test=["ldos"],
-#                  output_format="list"):
-#         """Initialize the TesterGraph class.
-#         """
-#         Tester.__init__(self, params, network, data, observables_to_test, output_format)
-#         Runner.__init__(self, params, network, data)
+class TesterGraph(Tester, RunnerGraph):
+    def __init__(self, params, network, data, observables_to_test=["ldos"],
+                 output_format="list"):
+        """Initialize the TesterGraph class.
+        """
+        Tester.__init__(self, params, network, data, observables_to_test, output_format)
+        RunnerGraph.__init__(self, params, network, data)

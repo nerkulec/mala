@@ -12,4 +12,4 @@ from .hyperparameter_naswot import HyperparameterNASWOT
 from .hyperparameter_optuna import HyperparameterOptuna
 from .hyperparameter_acsd import HyperparameterACSD
 from .acsd_analyzer import ACSDAnalyzer
-from .runner import Runner, RunnerGraph
+from .runner import RunnerMLP, RunnerGraph
