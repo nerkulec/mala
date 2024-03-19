@@ -1457,48 +1457,6 @@ class DataHandlerGraph(DataHandler):
             key=lambda d: snapshot_order[d.snapshot_function]
         )
 
-
-    def __allocate_arrays(self):
-        raise Exception("Shouldn't be used")
-        # if self.nr_training_data > 0:
-        #     self.training_data_inputs = np.zeros((self.nr_training_data,
-        #                                           self.input_dimension),
-        #                                          dtype=DEFAULT_NP_DATA_DTYPE)
-        #     self.training_data_outputs = np.zeros((self.nr_training_data,
-        #                                            self.output_dimension),
-        #                                           dtype=DEFAULT_NP_DATA_DTYPE)
-
-        # if self.nr_validation_data > 0:
-        #     self.validation_data_inputs = np.zeros((self.nr_validation_data,
-        #                                             self.input_dimension),
-        #                                            dtype=DEFAULT_NP_DATA_DTYPE)
-        #     self.validation_data_outputs = np.zeros((self.nr_validation_data,
-        #                                              self.output_dimension),
-        #                                             dtype=DEFAULT_NP_DATA_DTYPE)
-
-        # if self.nr_test_data > 0:
-        #     self.test_data_inputs = np.zeros((self.nr_test_data,
-        #                                       self.input_dimension),
-        #                                      dtype=DEFAULT_NP_DATA_DTYPE)
-        #     self.test_data_outputs = np.zeros((self.nr_test_data,
-        #                                        self.output_dimension),
-        #                                       dtype=DEFAULT_NP_DATA_DTYPE)
-
-    def __load_data(self, function, data_type):
-        """
-        Load data into the appropriate arrays.
-
-        Also transforms them into torch tensors.
-
-        Parameters
-        ----------
-        function : string
-            Can be "tr", "va" or "te.
-        data_type : string
-            Can be "input" or "output".
-        """
-        raise Exception("Shouldn't be used")
-
     def __build_datasets(self):
         """Build the DataSets that are used during training."""
         if self.parameters.use_clustering:
