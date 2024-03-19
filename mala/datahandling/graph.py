@@ -27,19 +27,19 @@ def get_ldos_positions(cell, nx, ny, nz):
   ldos_positions = np.zeros((nx, ny, nz, 3), dtype=np.float32)
   # I assume ldos values are evaluated at the center of each voxel
   # ! Test ! changing the assumption to origin
-  # for x in range(nx):
-  #   ldos_positions[x, :, :, 0] = (x+0.5)/nx
-  # for y in range(ny):
-  #   ldos_positions[:, y, :, 1] = (y+0.5)/ny
-  # for z in range(nz):
-  #   ldos_positions[:, :, z, 2] = (z+0.5)/nz
-  
   for x in range(nx):
-    ldos_positions[x, :, :, 0] = (x)/nx
+    ldos_positions[x, :, :, 0] = (x+0.5)/nx
   for y in range(ny):
-    ldos_positions[:, y, :, 1] = (y)/ny
+    ldos_positions[:, y, :, 1] = (y+0.5)/ny
   for z in range(nz):
-    ldos_positions[:, :, z, 2] = (z)/nz
+    ldos_positions[:, :, z, 2] = (z+0.5)/nz
+  
+  # for x in range(nx):
+  #   ldos_positions[x, :, :, 0] = (x)/nx
+  # for y in range(ny):
+  #   ldos_positions[:, y, :, 1] = (y)/ny
+  # for z in range(nz):
+  #   ldos_positions[:, :, z, 2] = (z)/nz
 
   ldos_positions = ldos_positions.reshape((-1, 3))
   ldos_positions = cell.cartesian_positions(ldos_positions)
