@@ -55,7 +55,7 @@ class GraphDataset(Dataset):
       self.ldos_graphs.append(
         get_ldos_graphs(
           input_path, ldos_batch_size, n_closest_ldos, 
-          n_batches=n_batches, ldos_shape=ldos_shape
+          n_batches=n_batches, ldos_shape=ldos_shape, corner=self.params.grid_points_in_corners
         )
       )
 

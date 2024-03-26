@@ -142,7 +142,6 @@ class Tester:
                 results[observable] = np.inf
         return results
 
-    @lru_cache(maxsize=1000)
     def predict_targets(self, snapshot_number, data_type='te'):
         """
         Get actual and predicted output for a snapshot.
@@ -181,12 +180,13 @@ class Tester:
         else:
             raise ValueError(f"Invalid data_type: {data_type} -- Valid options are tr, va, te.")
         # Forward through network.
-        return self.\
-            _forward_entire_snapshot(snapshot_number,
-                                     data_set,
-                                     data_type,
-                                     self.number_of_batches_per_snapshot,
-                                     self.parameters.mini_batch_size)
+        return self._forward_entire_snapshot(
+            snapshot_number,
+            data_set,
+            data_type,
+            self.number_of_batches_per_snapshot,
+            self.parameters.mini_batch_size
+        )
 
     def __calculate_observable_error(self, snapshot_number, observable,
                                      predicted_target, actual_target):

@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 from packaging import version
 
+from mala.datahandling.on_the_fly_graph_dataset import Subset
+
 try:
     import horovod.torch as hvd
 except ModuleNotFoundError:
@@ -1284,11 +1286,16 @@ class TrainerGraph(RunnerGraph):
 
         # If we restarted from a checkpoint, we have to differently initialize
         # the loss.
-        vloss = self.calculate_initial_metrics()
+        # vloss = self.calculate_initial_metrics()
+        vloss = np.inf
+        self.initial_validation_loss = vloss
+        self.initial_test_loss = vloss
         if self.last_loss is None:
             vloss_old = vloss
         else:
             vloss_old = self.last_loss
+            
+        best_vloss = np.inf
 
         ############################
         # PERFORM TRAINING
@@ -1296,6 +1303,11 @@ class TrainerGraph(RunnerGraph):
         
         total_batch_id = 0
         checkpoint_counter = 0
+        
+        snapshots_per_epoch_counter = 0
+        if self.parameters.snapshots_per_epoch > 0:
+            if self.training_data_loaders[0].n_snapshots % self.parameters.snapshots_per_epoch != 0:
+                raise Exception("snapshots_per_epoch must be a divisor of the number of snapshots.")
 
         for epoch in range(self.last_epoch, self.parameters.max_number_epochs):
             start_time = time.time()
@@ -1307,6 +1319,7 @@ class TrainerGraph(RunnerGraph):
             # training_loss_sum = torch.zeros(1, device=self.parameters._configuration["device"])
             training_loss_sum = 0.0
             training_loss_sum_logging = 0.0
+            
 
             # train sampler
             if self.parameters_full.use_horovod:
@@ -1321,17 +1334,25 @@ class TrainerGraph(RunnerGraph):
                 tsample = time.time()
                 t0 = time.time()
                 batchid = 0
+                assert len(self.training_data_loaders) == 1, "Only one training data loader supported for now."
+                
                 for loader in self.training_data_loaders:
-                    graph_ions: dgl.DGLGraph
-                    graph_grid: dgl.DGLGraph
-
                     embedding_hash = None
                     embedding_extended = None
                     embedding_step_counter = 0
-
+                    
+                    if self.parameters.snapshots_per_epoch > 0:
+                        dataset_subset_start_index = snapshots_per_epoch_counter*loader.n_ldos_batches
+                        dataset_subset_end_index = (snapshots_per_epoch_counter+self.parameters.snapshots_per_epoch)*loader.n_ldos_batches
+                        snapshots_per_epoch_counter += self.parameters.snapshots_per_epoch
+                        snapshots_per_epoch_counter %= loader.n_snapshots
+                        loader = Subset(loader, start_index=dataset_subset_start_index, end_index=dataset_subset_end_index)
+                        
+                    graph_ions: dgl.DGLGraph
+                    graph_grid: dgl.DGLGraph
                     for graph_ions, graph_grid in tqdm(
                         loader, desc="training", disable=self.parameters_full.verbosity < 2,
-                        total=len(loader)
+                        # total=len(loader)
                     ):
                         if batchid == self.parameters.profiler_range[0]:
                             torch.cuda.profiler.start()
@@ -1503,7 +1524,7 @@ class TrainerGraph(RunnerGraph):
                                  "epochs.", min_verbosity=1)
                         self.last_epoch = epoch
                         break
-
+            
             # If checkpointing is enabled, we need to checkpoint.
             if self.parameters.checkpoints_each_epoch != 0:
                 checkpoint_counter += 1
@@ -1512,8 +1533,15 @@ class TrainerGraph(RunnerGraph):
                     printout("Checkpointing training.", min_verbosity=0)
                     self.last_epoch = epoch
                     self.last_loss = vloss_old
-                    self.__create_training_checkpoint()
+                    self.__create_training_checkpoint(epoch=epoch)
                     checkpoint_counter = 0
+                    
+            if self.parameters.checkpoint_best_so_far and vloss < best_vloss:
+                printout(f"Checkpointing training because of improved vloss {vloss}<{best_vloss}.", min_verbosity=0)
+                self.last_epoch = epoch
+                self.last_loss = vloss_old
+                self.__create_training_checkpoint(epoch=epoch)
+                best_vloss = vloss
 
             printout("Time for epoch[s]:", time.time() - start_time,
                      min_verbosity=2)
@@ -2218,7 +2246,7 @@ class TrainerGraph(RunnerGraph):
             raise Exception("Invalid energy type requested.")
 
 
-    def __create_training_checkpoint(self):
+    def __create_training_checkpoint(self, epoch=None):
         """
         Create a checkpoint during training.
 
@@ -2253,12 +2281,21 @@ class TrainerGraph(RunnerGraph):
                 'early_stopping_counter': self.patience_counter,
                 'early_stopping_last_loss': self.last_loss
             }
-        torch.save(save_dict, encoder_optimizer_name,
-                   _use_new_zipfile_serialization=False)
-        torch.save(save_dict, decoder_optimizer_name,
-                   _use_new_zipfile_serialization=False)
+        torch.save(
+            save_dict, encoder_optimizer_name,
+            _use_new_zipfile_serialization=True
+        )
+        torch.save(
+            save_dict, decoder_optimizer_name,
+            _use_new_zipfile_serialization=True
+        )
+        if epoch is not None:
+            run_name = f"{self.parameters.checkpoint_name}_epoch_{epoch}"
+        else:
+            run_name = f"{self.parameters.checkpoint_name}"
 
-        self.save_run(self.parameters.checkpoint_name, save_runner=True)
+        # self.save_run(run_name, save_runner=True)
+        self.save_run(run_name, save_runner=False) # ! TEMPORARY because breaking
 
     @staticmethod
     def __average_validation(val, name):

@@ -23,23 +23,22 @@ class HashableAtoms(Atoms):
     return np.allclose(self.get_positions(), other.get_positions())
 
 
-def get_ldos_positions(cell, nx, ny, nz):
+def get_ldos_positions(cell, nx, ny, nz, corner=False):
   ldos_positions = np.zeros((nx, ny, nz, 3), dtype=np.float32)
-  # I assume ldos values are evaluated at the center of each voxel
-  # ! Test ! changing the assumption to origin
-  for x in range(nx):
-    ldos_positions[x, :, :, 0] = (x+0.5)/nx
-  for y in range(ny):
-    ldos_positions[:, y, :, 1] = (y+0.5)/ny
-  for z in range(nz):
-    ldos_positions[:, :, z, 2] = (z+0.5)/nz
-  
-  # for x in range(nx):
-  #   ldos_positions[x, :, :, 0] = (x)/nx
-  # for y in range(ny):
-  #   ldos_positions[:, y, :, 1] = (y)/ny
-  # for z in range(nz):
-  #   ldos_positions[:, :, z, 2] = (z)/nz
+  if corner:
+    for x in range(nx):
+      ldos_positions[x, :, :, 0] = (x)/nx
+    for y in range(ny):
+      ldos_positions[:, y, :, 1] = (y)/ny
+    for z in range(nz):
+      ldos_positions[:, :, z, 2] = (z)/nz
+  else:
+    for x in range(nx):
+      ldos_positions[x, :, :, 0] = (x+0.5)/nx
+    for y in range(ny):
+      ldos_positions[:, y, :, 1] = (y+0.5)/ny
+    for z in range(nz):
+      ldos_positions[:, :, z, 2] = (z+0.5)/nz
 
   ldos_positions = ldos_positions.reshape((-1, 3))
   ldos_positions = cell.cartesian_positions(ldos_positions)
@@ -124,13 +123,13 @@ warned_about_n_batches = False
 # @pickle_cache(folder_name='ldos_graphs')
 def get_ldos_graphs(
   filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
-  n_batches=None
+  n_batches=None, corner=False
 ):
   atoms = read(filename)
   atoms.__class__ = HashableAtoms
   cartesian_ion_positions = atoms.get_positions()
   cell = atoms.get_cell()
-  cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1])
+  cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1], corner=corner)
   # ! TEMPORARY
   if n_batches is not None:
     global warned_about_n_batches
@@ -173,3 +172,35 @@ def get_ldos_graphs(
   return ldos_graphs
 
 
+def get_ldos_graph_loader(
+  filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=None, corner=False
+):
+  atoms = read(filename)
+  atoms.__class__ = HashableAtoms
+  cartesian_ion_positions = atoms.get_positions()
+  cell = atoms.get_cell()
+  cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1], corner=corner)
+
+  cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)
+  if len(cartesian_ldos_positions) % ldos_batch_size != 0:
+    raise ValueError(f'len(cartesian_ldos_positions) = {len(cartesian_ldos_positions)} is not divisible by ldos_batch_size = {ldos_batch_size}')
+  n_ions = len(cartesian_ion_positions)
+  scaled_ion_positions = cell.scaled_positions(cartesian_ion_positions)
+  repeated_ion_positions = repeat_cell(scaled_ion_positions)
+  cartesian_ion_positions = cell.cartesian_positions(repeated_ion_positions)
+  cartesian_ion_positions = torch.tensor(cartesian_ion_positions, dtype=torch.float32)
+  
+  def get_ldos_graph(batch_number):
+    cartesian_ldos_positions_batch = cartesian_ldos_positions[
+      batch_number*ldos_batch_size:(batch_number+1)*ldos_batch_size]
+    distances = torch.cdist(cartesian_ldos_positions_batch, cartesian_ion_positions)
+    closest_ion_indices = torch.argsort(distances, dim=1)[:, :n_closest_ldos]
+    dst = torch.arange(ldos_batch_size).repeat_interleave(n_closest_ldos)
+    src = closest_ion_indices.flatten()
+    rel_pos = cartesian_ldos_positions_batch[dst] - cartesian_ion_positions[src]
+    src = src % n_ions
+    dst = dst + n_ions
+    ldos_graph = dgl.graph((src, dst), num_nodes=n_ions+ldos_batch_size)
+    ldos_graph.edata['rel_pos'] = rel_pos
+    return ldos_graph
+  return get_ldos_graph

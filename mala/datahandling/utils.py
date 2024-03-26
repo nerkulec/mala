@@ -96,4 +96,3 @@ def binary_cache(folder_name=None):
         return value
     return inner
   return decorator
-

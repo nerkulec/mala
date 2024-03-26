@@ -16,12 +16,12 @@ from ase.io import read
 
 @lru_cache(maxsize=1)
 @pickle_cache(folder_name='ldos_graphs')
-def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, max_degree, n_batches):
+def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, max_degree, n_batches, corner):
   ldos = np.load(ldos_path)
   ldos_shape = ldos.shape
   ldos_graphs = get_ldos_graphs(
     input_path, ldos_batch_size, n_closest_ldos,
-    n_batches=n_batches, ldos_shape=ldos_shape
+    n_batches=n_batches, ldos_shape=ldos_shape, corner=corner
   )
   
   atoms = read(input_path)
@@ -115,7 +115,8 @@ class LazyGraphDataset(Dataset):
     ldos_path = self.ldos_paths[i]
     input_path = self.input_paths[i]
     ldos_graphs = load_ldos_graphs(
-      ldos_path, input_path, self.ldos_batch_size, self.n_closest_ldos, self.max_degree, self.n_batches
+      ldos_path, input_path, self.ldos_batch_size, self.n_closest_ldos,
+      self.max_degree, self.n_batches, corner=self.params.grid_points_in_corners
     )
     self.ldos_dim = ldos_graphs[0].ndata['target'].shape[-1]
     return ldos_graphs

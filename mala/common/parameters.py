@@ -606,8 +606,11 @@ class ParametersData(ParametersBase):
         self.sample_ratio = 0.5
         self.use_fast_tensor_data_set = False
         self.use_graph_data_set = False
+        self.use_on_the_fly_graph_dataset = False
+        self.n_prefetch = 100
         self.n_closest_ions = 8
         self.n_closest_ldos = 16
+        self.grid_points_in_corners = False
         self.n_batches = None
         self.shuffling_seed = None
 
@@ -736,6 +739,7 @@ class ParametersRunning(ParametersBase):
         self.verbosity = True
         self.mini_batch_size = 10
         self.ldos_grid_batch_size = 600
+        self.snapshots_per_epoch = -1
         self.embedding_reuse_steps = 10
         self.weight_decay = 0
         self.early_stopping_epochs = 0
@@ -747,6 +751,7 @@ class ParametersRunning(ParametersBase):
         self.num_workers = 0
         self.use_shuffling_for_samplers = True
         self.checkpoints_each_epoch = 0
+        self.checkpoint_best_so_far = False
         self.checkpoint_name = "checkpoint_mala"
         self.run_name = ''
         self.visualisation = 0
