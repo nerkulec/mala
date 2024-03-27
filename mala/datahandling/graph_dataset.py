@@ -12,12 +12,14 @@ from tqdm.auto import tqdm, trange
 class GraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
-    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None
+    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None,
+    grid_points_in_corners=False
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
     self.ldos_batch_size = ldos_batch_size
     self.max_degree = max_degree
+    self.grid_points_in_corners = grid_points_in_corners
     self.ion_graphs = [
       get_ion_graph(input_path, n_closest_ions) for input_path in input_paths
     ]
@@ -55,7 +57,7 @@ class GraphDataset(Dataset):
       self.ldos_graphs.append(
         get_ldos_graphs(
           input_path, ldos_batch_size, n_closest_ldos, 
-          n_batches=n_batches, ldos_shape=ldos_shape, corner=self.params.grid_points_in_corners
+          n_batches=n_batches, ldos_shape=ldos_shape, corner=self.grid_points_in_corners
         )
       )
 

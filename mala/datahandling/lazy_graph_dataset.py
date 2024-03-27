@@ -59,7 +59,8 @@ def load_ldos_graphs(ldos_path, input_path, ldos_batch_size, n_closest_ldos, max
 class LazyGraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
-    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None
+    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None,
+    grid_points_in_corners=False
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
@@ -70,6 +71,7 @@ class LazyGraphDataset(Dataset):
     self.ldos_paths = ldos_paths
     self.input_paths = input_paths
     self.n_batches = n_batches
+    self.grid_points_in_corners = grid_points_in_corners
     self.ion_graphs = [
       get_ion_graph(input_path, self.n_closest_ions) for input_path in input_paths
     ]
@@ -116,7 +118,7 @@ class LazyGraphDataset(Dataset):
     input_path = self.input_paths[i]
     ldos_graphs = load_ldos_graphs(
       ldos_path, input_path, self.ldos_batch_size, self.n_closest_ldos,
-      self.max_degree, self.n_batches, corner=self.params.grid_points_in_corners
+      self.max_degree, self.n_batches, corner=self.grid_points_in_corners
     )
     self.ldos_dim = ldos_graphs[0].ndata['target'].shape[-1]
     return ldos_graphs

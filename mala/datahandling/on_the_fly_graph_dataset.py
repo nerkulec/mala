@@ -76,7 +76,8 @@ def load_ldos_graph(batch_index, ldos_path, graph_loader, ldos_batch_size, max_d
 class OnTheFlyGraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
-    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None, n_prefetch=100
+    max_degree=1, ldos_paths=[], input_paths=[], n_batches=None, n_prefetch=100,
+    grid_points_in_corners=False
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
@@ -89,6 +90,7 @@ class OnTheFlyGraphDataset(Dataset):
     self.max_degree = max_degree
     self.n_batches = n_batches
     self.n_prefetch = n_prefetch
+    self.grid_points_in_corners = grid_points_in_corners
     
     self.pool_executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix="GraphPrefetcher")
     
@@ -131,7 +133,7 @@ class OnTheFlyGraphDataset(Dataset):
       self.ldos_dim = ldos_shape[-1]
       ldos_graph_loader = get_ldos_graph_loader(
         input_path, self.ldos_batch_size, self.n_closest_ldos, ldos_shape,
-        corner=self.params.grid_points_in_corners
+        corner=self.grid_points_in_corners
       )
       self.graph_loaders[snapshot_index] = ldos_graph_loader
     self.ldos_graphs_cache = {}
@@ -158,7 +160,7 @@ class OnTheFlyGraphDataset(Dataset):
       load_ldos_graph, batch_indices, ldos_paths, graph_loaders,
       [self.ldos_batch_size]*len(batch_indices),
       [self.max_degree]*len(batch_indices),
-      [self.n_atoms]*len(batch_indices)
+      [self.n_atoms]*len(batch_indices),
     )
     for (snapshot_index, batch_index), ldos_graph in zip(batch_tuples, ldos_graphs):
       self.ldos_graphs_cache[(snapshot_index, batch_index)] = ldos_graph
