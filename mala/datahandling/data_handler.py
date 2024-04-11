@@ -1488,6 +1488,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.network.max_degree,
                     ldos_paths=train_ldos_paths, input_paths=train_input_paths,
                     n_batches=self.params.data.n_batches,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))
             elif self.parameters.use_on_the_fly_graph_dataset:
                 self.training_data_sets.append(OnTheFlyGraphDataset(
@@ -1498,6 +1499,9 @@ class DataHandlerGraph(DataHandler):
                     ldos_paths=train_ldos_paths, input_paths=train_input_paths,
                     n_batches=self.params.data.n_batches,
                     n_prefetch=self.params.data.n_prefetch,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
+                    ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
                 ))
             else:
                 self.training_data_sets.append(GraphDataset(
@@ -1507,6 +1511,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.network.max_degree,
                     ldos_paths=train_ldos_paths, input_paths=train_input_paths,
                     n_batches=self.params.data.n_batches,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))
             self.output_dimension = self.training_data_sets[0].ldos_dim # Probably not the right place to do it
 
@@ -1540,6 +1545,8 @@ class DataHandlerGraph(DataHandler):
                     n_batches=self.params.data.n_batches,
                     n_prefetch=self.params.data.n_prefetch,
                     grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
+                    ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
                 ))
             else:
                 self.validation_data_sets.append(GraphDataset(
@@ -1571,6 +1578,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.network.max_degree,
                     ldos_paths=test_ldos_paths, input_paths=test_input_paths,
                     n_batches=self.params.data.n_batches,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))
             elif self.parameters.use_on_the_fly_graph_dataset:
                 self.test_data_sets.append(OnTheFlyGraphDataset(
@@ -1581,6 +1589,7 @@ class DataHandlerGraph(DataHandler):
                     ldos_paths=test_ldos_paths, input_paths=test_input_paths,
                     n_batches=self.params.data.n_batches,
                     n_prefetch=self.params.data.n_prefetch,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))                
             else:
                 self.test_data_sets.append(GraphDataset(
@@ -1590,6 +1599,7 @@ class DataHandlerGraph(DataHandler):
                     self.params.network.max_degree,
                     ldos_paths=test_ldos_paths, input_paths=test_input_paths,
                     n_batches=self.params.data.n_batches,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))
             self.output_dimension = self.test_data_sets[0].ldos_dim # Probably not the right place to do it
     # Scaling

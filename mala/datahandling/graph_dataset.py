@@ -13,13 +13,16 @@ class GraphDataset(Dataset):
   def __init__(
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
     max_degree=1, ldos_paths=[], input_paths=[], n_batches=None,
-    grid_points_in_corners=False
+    grid_points_in_corners=False, randomize_ldos_grid_positions=False,
+    seed=2137
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
     self.ldos_batch_size = ldos_batch_size
     self.max_degree = max_degree
     self.grid_points_in_corners = grid_points_in_corners
+    self.randomize_ldos_grid_positions = randomize_ldos_grid_positions
+    self.seed = seed
     self.ion_graphs = [
       get_ion_graph(input_path, n_closest_ions) for input_path in input_paths
     ]
@@ -54,43 +57,23 @@ class GraphDataset(Dataset):
       ldos = np.load(ldos_path)
       ldos_shape = ldos.shape
 
-      self.ldos_graphs.append(
-        get_ldos_graphs(
-          input_path, ldos_batch_size, n_closest_ldos, 
-          n_batches=n_batches, ldos_shape=ldos_shape, corner=self.grid_points_in_corners
-        )
-      )
-
       ldos_size = np.prod(ldos_shape[:-1])
       self.grid_size = ldos_size
       self.grid_sizes.append(ldos_size)
 
       self.ldos_dim = ldos_shape[-1]
       ldos = ldos.reshape((-1, ldos_shape[-1]))
+
+      self.ldos_graphs.append(
+        get_ldos_graphs(
+          input_path, ldos, ldos_batch_size, n_closest_ldos, max_degree=self.max_degree,
+          n_batches=n_batches, ldos_shape=ldos_shape, corner=self.grid_points_in_corners,
+          randomize_ldos_grid_positions=self.randomize_ldos_grid_positions,
+          seed=self.seed
+        )
+      )
+      
       self.n_ldos_batches = len(self.ldos_graphs[0])
-      for j in trange(len(self.ldos_graphs[list_i]), desc="Filling LDOS graphs"):
-        ldos_batch = torch.tensor(
-          ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
-        )
-        ldos_graph = self.ldos_graphs[list_i][j]
-        ldos_graph.ndata['target'] = torch.cat(
-          [torch.zeros((n_atoms, ldos_shape[-1]), dtype=torch.float32), ldos_batch], dim=0
-        )
-        # ! Assume atom is hydrogen
-        ldos_graph.ndata['feature'] = torch.cat([
-          torch.ones((n_atoms, 1, 1), dtype=torch.float32), torch.zeros((ldos_batch_size, 1, 1), dtype=torch.float32)
-        ], dim=0)
-        basis_grid = get_basis(
-          ldos_graph.edata['rel_pos'], max_degree=self.max_degree, compute_gradients=False,
-          use_pad_trick=False, amp=torch.is_autocast_enabled()
-        )
-        basis_grid = update_basis_with_fused(
-          basis_grid, max_degree=self.max_degree, use_pad_trick=False, fully_fused=True
-        )
-        for key in basis_grid.keys():
-          ldos_graph.edata['basis_'+key] = basis_grid[key]
-        edge_features = get_populated_edge_features(ldos_graph.edata['rel_pos'], None)
-        ldos_graph.edata['edge_features'] = edge_features['0']
         
 
   def __getitem__(self, i):

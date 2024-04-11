@@ -14,6 +14,9 @@ from functools import lru_cache
 from mala.common.parallelizer import printout
 from .utils import pickle_cache
 
+from se3_transformer.model.basis import get_basis, update_basis_with_fused
+from se3_transformer.model.transformer import get_populated_edge_features
+
 
 class HashableAtoms(Atoms):
   def __hash__(self):
@@ -43,18 +46,6 @@ def get_ldos_positions(cell, nx, ny, nz, corner=False):
   ldos_positions = ldos_positions.reshape((-1, 3))
   ldos_positions = cell.cartesian_positions(ldos_positions)
   return ldos_positions
-
-
-def get_ldos(
-  ldos_path,
-  num_snapshots, nx, ny, nz, ldos_dim
-):
-  ldos = np.zeros((num_snapshots, nx, ny, nz, ldos_dim), dtype=np.float32)
-  
-  for i in trange(num_snapshots, desc="Loading LDOS from npy files"):
-    ldos[i] = np.load(os.path.join(ldos_path, f'H_snapshot{i}.out.npy'))
-  ldos = ldos.reshape((num_snapshots, -1, ldos_dim))
-  return ldos
 
 
 def repeat_cell(scaled_positions):
@@ -122,11 +113,12 @@ warned_about_n_batches = False
 # @lru_cache(maxsize=1000)
 # @pickle_cache(folder_name='ldos_graphs')
 def get_ldos_graphs(
-  filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
-  n_batches=None, corner=False
+  atoms_path, ldos, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
+  max_degree=1, n_batches=None, corner=False, randomize_ldos_grid_positions=False, seed=None
 ):
-  atoms = read(filename)
+  atoms = read(atoms_path)
   atoms.__class__ = HashableAtoms
+  n_atoms = len(atoms)
   cartesian_ion_positions = atoms.get_positions()
   cell = atoms.get_cell()
   cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1], corner=corner)
@@ -134,18 +126,29 @@ def get_ldos_graphs(
   if n_batches is not None:
     global warned_about_n_batches
     if not warned_about_n_batches:
-      printout("WARNING: Using 'n_batches' should be only used for testing", 1)
+      printout("WARNING: Using 'n_batches' should be only used for testing", min_verbosity=1)
       warned_about_n_batches = True
     cartesian_ldos_positions = cartesian_ldos_positions[:ldos_batch_size*n_batches]
+  
+  
+  seed = atoms_path+seed
+  random_permutation = np.arange(len(cartesian_ldos_positions))  
+  if randomize_ldos_grid_positions:
+    rs = np.random.RandomState(seed)
+    rs.shuffle(random_permutation)
+    
+  ldos = ldos[random_permutation]
+  cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
 
   cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)
   if len(cartesian_ldos_positions) % ldos_batch_size != 0:
-    raise ValueError(f'len(cartesian_ldos_positions) = {len(cartesian_ldos_positions)} is not divisible by ldos_batch_size = {ldos_batch_size}')
+    raise ValueError(f'{len(cartesian_ldos_positions)=} is not divisible by {ldos_batch_size=}')
   n_ions = len(cartesian_ion_positions)
   scaled_ion_positions = cell.scaled_positions(cartesian_ion_positions)
   repeated_ion_positions = repeat_cell(scaled_ion_positions)
   cartesian_ion_positions = cell.cartesian_positions(repeated_ion_positions)
   cartesian_ion_positions = torch.tensor(cartesian_ion_positions, dtype=torch.float32)
+  
   ldos_graphs = []
   for i in trange(
     0, len(cartesian_ldos_positions), ldos_batch_size,
@@ -169,14 +172,54 @@ def get_ldos_graphs(
     ldos_graph.edata['rel_pos'] = rel_pos
     # ldos_graph.ndata['pos'] = torch.cat([cartesian_ion_positions[:n_ions], cartesian_ldos_positions_batch])
     ldos_graphs.append(ldos_graph)
+  
+  for j in trange(len(ldos_graphs), desc="Filling LDOS graphs"):
+    ldos_batch = torch.tensor(
+      ldos[j*ldos_batch_size:(j+1)*ldos_batch_size], dtype=torch.float32
+    )
+    ldos_graph = ldos_graphs[j]
+    ldos_graph.ndata['target'] = torch.cat(
+      [torch.zeros((n_atoms, ldos_shape[-1]), dtype=torch.float32), ldos_batch], dim=0
+    )
+    # ! Assume cell contains only one atoms species
+    ldos_graph.ndata['feature'] = torch.cat([
+      torch.ones((n_atoms, 1, 1), dtype=torch.float32), torch.zeros((ldos_batch_size, 1, 1), dtype=torch.float32)
+    ], dim=0)
+    basis_grid = get_basis(
+      ldos_graph.edata['rel_pos'], max_degree=max_degree, compute_gradients=False,
+      use_pad_trick=False, amp=torch.is_autocast_enabled()
+    )
+    basis_grid = update_basis_with_fused(
+      basis_grid, max_degree=max_degree, use_pad_trick=False, fully_fused=True
+    )
+    for key in basis_grid.keys():
+      ldos_graph.edata['basis_'+key] = basis_grid[key]
+    edge_features = get_populated_edge_features(ldos_graph.edata['rel_pos'], None)
+    ldos_graph.edata['edge_features'] = edge_features['0']
+  
   return ldos_graphs
 
 
+@lru_cache(maxsize=2)
+def load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions):
+  ldos = np.load(ldos_path)
+  ldos = ldos.reshape((-1, ldos.shape[-1]))
+  random_permutation = np.arange(len(ldos))
+  if randomize_ldos_grid_positions:
+    rs = np.random.RandomState(hash(seed)%(2**32))
+    rs.shuffle(random_permutation)
+  print(f"load_permuted_ldos {seed=}, {random_permutation[:20]=}")
+  ldos = ldos[random_permutation]
+  ldos = torch.tensor(ldos, dtype=torch.float32)
+  return ldos
+
 def get_ldos_graph_loader(
-  filename, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=None, corner=False
+  atoms_path, ldos_path, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=None, corner=False,
+  max_degree=1, randomize_ldos_grid_positions=False, seed=None
 ):
-  atoms = read(filename)
+  atoms = read(atoms_path)
   atoms.__class__ = HashableAtoms
+  n_atoms = len(atoms)
   cartesian_ion_positions = atoms.get_positions()
   cell = atoms.get_cell()
   cartesian_ldos_positions = get_ldos_positions(cell, *ldos_shape[:-1], corner=corner)
@@ -190,7 +233,17 @@ def get_ldos_graph_loader(
   cartesian_ion_positions = cell.cartesian_positions(repeated_ion_positions)
   cartesian_ion_positions = torch.tensor(cartesian_ion_positions, dtype=torch.float32)
   
+  seed = atoms_path+seed
+  random_permutation = np.arange(len(cartesian_ldos_positions))  
+  if randomize_ldos_grid_positions:
+    rs = np.random.RandomState(hash(seed)%(2**32))
+    rs.shuffle(random_permutation)
+  print(f"get_ldos_graph_loader {seed=}, {random_permutation[:20]=}")
+    
+  cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
+  
   def get_ldos_graph(batch_number):
+    ldos = load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions)
     cartesian_ldos_positions_batch = cartesian_ldos_positions[
       batch_number*ldos_batch_size:(batch_number+1)*ldos_batch_size]
     distances = torch.cdist(cartesian_ldos_positions_batch, cartesian_ion_positions)
@@ -202,5 +255,28 @@ def get_ldos_graph_loader(
     dst = dst + n_ions
     ldos_graph = dgl.graph((src, dst), num_nodes=n_ions+ldos_batch_size)
     ldos_graph.edata['rel_pos'] = rel_pos
+    # --
+    ldos_batch = torch.tensor(
+      ldos[batch_number*ldos_batch_size:(batch_number+1)*ldos_batch_size], dtype=torch.float32
+    )
+    ldos_graph.ndata['target'] = torch.cat(
+      [torch.zeros((n_atoms, ldos_shape[-1]), dtype=torch.float32), ldos_batch], dim=0
+    )
+    # ! Assume cell contains only one atoms species
+    ldos_graph.ndata['feature'] = torch.cat([
+      torch.ones((n_atoms, 1, 1), dtype=torch.float32), torch.zeros((ldos_batch_size, 1, 1), dtype=torch.float32)
+    ], dim=0)
+    basis_grid = get_basis(
+      ldos_graph.edata['rel_pos'], max_degree=max_degree, compute_gradients=False,
+      use_pad_trick=False, amp=torch.is_autocast_enabled()
+    )
+    basis_grid = update_basis_with_fused(
+      basis_grid, max_degree=max_degree, use_pad_trick=False, fully_fused=True
+    )
+    for key in basis_grid.keys():
+      ldos_graph.edata['basis_'+key] = basis_grid[key]
+    edge_features = get_populated_edge_features(ldos_graph.edata['rel_pos'], None)
+    ldos_graph.edata['edge_features'] = edge_features['0']
+    # --
     return ldos_graph
   return get_ldos_graph

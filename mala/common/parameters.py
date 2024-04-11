@@ -612,6 +612,8 @@ class ParametersData(ParametersBase):
         self.n_closest_ldos = 16
         self.grid_points_in_corners = False
         self.n_batches = None
+        self.on_the_fly_shuffling = True
+        self.ldos_grid_random_subset = True
         self.shuffling_seed = None
 
 
