@@ -87,6 +87,7 @@ class OnTheFlyGraphDataset(Dataset):
     self.max_degree = max_degree
     self.n_batches = n_batches
     self.n_prefetch = n_prefetch
+    self.cache_misses = 0
     self.grid_points_in_corners = grid_points_in_corners
     self.on_the_fly_shuffling = on_the_fly_shuffling
     self.ldos_grid_random_subset = ldos_grid_random_subset
@@ -185,7 +186,8 @@ class OnTheFlyGraphDataset(Dataset):
     snapshot_index, batch_index = self.batch_tuples[i]
     if (snapshot_index, batch_index) in self.ldos_graphs_cache:
       return self.ldos_graphs_cache[(snapshot_index, batch_index)]
-    printout(f"Warning: cache miss for ({i}/{self.n_snapshots*self.n_ldos_batches})")
+    # printout(f"Warning: cache miss for ({i}/{self.n_snapshots*self.n_ldos_batches})")
+    self.cache_misses += 1
     # ldos_path = self.ldos_paths[snapshot_index]
     graph_loader = self.graph_loaders[snapshot_index]
     ldos_graph = graph_loader(batch_index)
@@ -227,6 +229,8 @@ class OnTheFlyGraphDataset(Dataset):
     if i == len(self.batch_tuples)-1:
       self.batch_tuples = self.next_batch_tuples
       self.next_batch_tuples = self.get_batch_tuples()
+      printout(f"Cache misses: {self.cache_misses}/{len(self.batch_tuples)}")
+      self.cache_misses = 0
     
     return ion_graph, ldos_graph
 
