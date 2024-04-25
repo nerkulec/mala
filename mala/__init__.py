@@ -10,7 +10,7 @@ from .common import Parameters, printout, check_modules
 from .descriptors import Bispectrum, Descriptor, AtomicDensity
 from .datahandling import DataHandler, DataScaler, DataConverter, \
     Snapshot, DataShuffler
-from .network import Network, Tester, Trainer, TrainerGraph, HyperOpt, \
+from .network import Network, Tester, Trainer, TrainerGNN, HyperOpt, \
     HyperOptOptuna, HyperOptNASWOT, HyperOptOAT, Predictor, \
     HyperparameterOAT, HyperparameterNASWOT, HyperparameterOptuna, \
     HyperparameterACSD, ACSDAnalyzer, RunnerMLP, RunnerGraph

@@ -1,7 +1,7 @@
 """Everything concerning network and network architecture."""
 from .network import Network
 from .tester import Tester
-from .trainer import Trainer, TrainerGraph
+from .trainer import Trainer, TrainerGNN
 from .hyper_opt import HyperOpt
 from .hyper_opt_optuna import HyperOptOptuna
 from .hyper_opt_naswot import HyperOptNASWOT

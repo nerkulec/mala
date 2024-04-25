@@ -626,9 +626,8 @@ class ParametersRunning(ParametersBase):
 
     Attributes
     ----------
-    trainingtype : string
-        Training type to be used. Supported options at the moment:
-
+    optimizer : string
+        Optimizer to be used. Supported options at the moment:
             - SGD: Stochastic gradient descent.
             - Adam: Adam Optimization Algorithm
 
@@ -701,19 +700,19 @@ class ParametersRunning(ParametersBase):
         Name used for the checkpoints. Using this, multiple runs
         can be performed in the same directory.
 
-    visualisation : int
-        If True then Tensorboard is activated for visualisation
+    logging : int
+        If True then Tensorboard is activated for logging
         case 0: No tensorboard activated
         case 1: tensorboard activated with Loss and learning rate
         case 2; additonally weights and biases and gradient
 
-    visualisation_dir : string
-        Name of the folder that visualization files will be saved to.
+    logging_dir : string
+        Name of the folder that logging files will be saved to.
 
-    visualisation_dir_append_date : bool
-        If True, then upon creating visualization files, these will be saved
-        in a subfolder of visualisation_dir labelled with the starting date
-        of the visualization, to avoid having to change input scripts often.
+    logging_dir_append_date : bool
+        If True, then upon creating logging files, these will be saved
+        in a subfolder of logging_dir labelled with the starting date
+        of the logging, to avoid having to change input scripts often.
 
     inference_data_grid : list
         List holding the grid to be used for inference in the form of
@@ -722,7 +721,7 @@ class ParametersRunning(ParametersBase):
     use_mixed_precision : bool
         If True, mixed precision computation (via AMP) will be used.
 
-    training_report_frequency : int
+    training_log_interval : int
         Determines how often detailed performance info is printed during
         training (only has an effect if the verbosity is high enough).
 
@@ -734,13 +733,13 @@ class ParametersRunning(ParametersBase):
 
     def __init__(self):
         super(ParametersRunning, self).__init__()
-        self.trainingtype = "SGD"
+        self.optimizer = "Adam"
         self.learning_rate = 10**(-5)
         self.learning_rate_embedding = 10**(-4)
         self.max_number_epochs = 100
         self.verbosity = True
         self.mini_batch_size = 10
-        self.ldos_grid_batch_size = 600
+        self.ldos_grid_batch_size = 1000
         self.snapshots_per_epoch = -1
         self.embedding_reuse_steps = 10
         self.weight_decay = 0
@@ -749,6 +748,7 @@ class ParametersRunning(ParametersBase):
         self.learning_rate_scheduler = None
         self.learning_rate_decay = 0.1
         self.learning_rate_patience = 0
+        self.during_training_metric = "ldos"
         self.use_compression = False
         self.num_workers = 0
         self.use_shuffling_for_samplers = True
@@ -756,75 +756,19 @@ class ParametersRunning(ParametersBase):
         self.checkpoint_best_so_far = False
         self.checkpoint_name = "checkpoint_mala"
         self.run_name = ''
-        self.visualisation = 0
-        self.visualisation_dir = os.path.join(".", "mala_logging")
-        self.visualisation_dir_append_date = True
-        self.during_training_metric = "ldos"
-        self.after_before_training_metric = "ldos"
+        self.logging = 0
+        self.logging_dir = "./mala_logging"
+        self.logging_dir_append_date = True
+        self.validation_metrics = ["ldos"]
+        self.validate_on_training_data = False
         self.inference_data_grid = [0, 0, 0]
         self.use_mixed_precision = False
         self.use_graphs = False
-        self.training_report_frequency = 1000
+        self.training_log_interval = 1000
         self.profiler_range = [1000, 2000]
 
     def _update_horovod(self, new_horovod):
         super(ParametersRunning, self)._update_horovod(new_horovod)
-        self.during_training_metric = self.during_training_metric
-        self.after_before_training_metric = self.after_before_training_metric
-
-    @property
-    def during_training_metric(self):
-        """
-        Control the metric used during training.
-
-        Metric for evaluated on the validation set during training.
-        Default is "ldos", meaning that the regular loss on the LDOS will be
-        used as a metric. Possible options are "band_energy" and
-        "total_energy". For these, the band resp. total energy of the
-        validation snapshots will be calculated and compared to the provided
-        DFT results. Of these, the mean average error in eV/atom will be
-        calculated.
-        """
-        return self._during_training_metric
-
-    @during_training_metric.setter
-    def during_training_metric(self, value):
-        if value != "ldos":
-            if self._configuration["horovod"]:
-                raise Exception("Currently, MALA can only operate with the "
-                                "\"ldos\" metric for horovod runs.")
-        self._during_training_metric = value
-
-    @property
-    def after_before_training_metric(self):
-        """
-        Get the metric used during training.
-
-        Metric for evaluated on the validation and test set before and after
-        training. Default is "LDOS", meaning that the regular loss on the LDOS
-        will be used as a metric. Possible options are "band_energy" and
-        "total_energy". For these, the band resp. total energy of the
-        validation snapshots will be calculated and compared to the provided
-        DFT results. Of these, the mean average error in eV/atom will be
-        calculated.
-        """
-        return self._after_before_training_metric
-
-    @after_before_training_metric.setter
-    def after_before_training_metric(self, value):
-        if value != "ldos":
-            if self._configuration["horovod"]:
-                raise Exception("Currently, MALA can only operate with the "
-                                "\"ldos\" metric for horovod runs.")
-        self._after_before_training_metric = value
-
-    @during_training_metric.setter
-    def during_training_metric(self, value):
-        if value != "ldos":
-            if self._configuration["horovod"]:
-                raise Exception("Currently, MALA can only operate with the "
-                                "\"ldos\" metric for horovod runs.")
-        self._during_training_metric = value
 
     @property
     def use_graphs(self):

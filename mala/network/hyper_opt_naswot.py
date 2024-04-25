@@ -31,7 +31,7 @@ class HyperOptNASWOT(HyperOpt):
         self.trial_losses = None
         self.best_trial = None
         self.trial_list = None
-        self.ignored_hyperparameters = ["learning_rate", "trainingtype",
+        self.ignored_hyperparameters = ["learning_rate", "optimizer",
                                         "mini_batch_size",
                                         "early_stopping_epochs",
                                         "learning_rate_patience",

@@ -35,7 +35,7 @@ import dgl
 class Trainer:
     def __new__(cls, params, *args, **kwargs):
         if params.network.nn_type == "se3_transformer":
-            return TrainerGraph(params, *args, **kwargs)
+            return TrainerGNN(params, *args, **kwargs)
         else:
             return TrainerMLP(params, *args, **kwargs)
 
@@ -81,27 +81,27 @@ class TrainerMLP(RunnerMLP):
         self.__prepare_to_train(optimizer_dict)
 
         self.tensor_board = None
-        self.full_visualization_path = None
-        if self.parameters.visualisation:
-            if not os.path.exists(self.parameters.visualisation_dir):
-                os.makedirs(self.parameters.visualisation_dir)
-            if self.parameters.visualisation_dir_append_date:
+        self.full_logging_path = None
+        if self.parameters.logging:
+            if not os.path.exists(self.parameters.logging_dir):
+                os.makedirs(self.parameters.logging_dir)
+            if self.parameters.logging_dir_append_date:
                 date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
                 if len(self.parameters.run_name) > 0:
                     name = self.parameters.run_name + "_" + date_time
                 else:
                     name = date_time
-                self.full_visualization_path = \
-                    os.path.join(self.parameters.visualisation_dir, name)
-                os.makedirs(self.full_visualization_path)
+                self.full_logging_path = \
+                    os.path.join(self.parameters.logging_dir, name)
+                os.makedirs(self.full_logging_path)
             else:
-                self.full_visualization_path = \
-                    self.parameters.visualisation_dir
+                self.full_logging_path = \
+                    self.parameters.logging_dir
 
             # Set the path to log files
-            self.tensor_board = SummaryWriter(self.full_visualization_path)
-            printout("Writing visualization output to",
-                     self.full_visualization_path, min_verbosity=1)
+            self.tensor_board = SummaryWriter(self.full_logging_path)
+            printout("Writing logging output to",
+                     self.full_logging_path, min_verbosity=1)
 
         self.gradscaler = None
         if self.parameters.use_mixed_precision:
@@ -235,43 +235,8 @@ class TrainerMLP(RunnerMLP):
         # CALCULATE INITIAL METRICS
         ############################
 
-        tloss = float("inf")
         vloss = float("inf")
-        # vloss = self.__validate_network(self.network,
-        #                                 "validation",
-        #                                 self.parameters.
-        #                                 after_before_training_metric)
-
-        # if self.data.test_data_sets:
-        #     tloss = self.__validate_network(self.network,
-        #                                     "test",
-        #                                     self.parameters.
-        #                                     after_before_training_metric)
-
-        # Collect and average all the losses from all the devices
-        if self.parameters_full.use_horovod:
-            vloss = self.__average_validation(vloss, 'average_loss')
-            self.initial_validation_loss = vloss
-            if self.data.test_data_set is not None:
-                tloss = self.__average_validation(tloss, 'average_loss')
-                self.initial_test_loss = tloss
-
-        printout(f"Initial Guess - validation data loss: {vloss:.3e}",
-                 min_verbosity=1)
-        if self.data.test_data_sets:
-            printout("Initial Guess - test data loss: ", tloss,
-                     min_verbosity=1) # Why?
-
-        # Save losses for later use.
         self.initial_validation_loss = vloss
-        self.initial_test_loss = tloss
-
-
-        if self.parameters.visualisation:
-            self.tensor_board.add_scalars(
-                'Loss', {'validation': vloss}, 0
-            )
-            self.tensor_board.close()
 
         # Initialize all the counters.
         checkpoint_counter = 0
@@ -327,37 +292,39 @@ class TrainerMLP(RunnerMLP):
                         torch.cuda.nvtx.range_push(f"step {batchid}")
 
                         torch.cuda.nvtx.range_push("data copy in")
-                        inputs = inputs.to(self.parameters._configuration["device"],
-                                           non_blocking=True)
-                        outputs = outputs.to(self.parameters._configuration["device"],
-                                             non_blocking=True)
+                        inputs = inputs.to(
+                            self.parameters._configuration["device"], non_blocking=True
+                        )
+                        outputs = outputs.to(
+                            self.parameters._configuration["device"], non_blocking=True
+                        )
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
-                        loss = self.__process_mini_batch(self.network,
-                                                         inputs,
-                                                         outputs)
+                        loss = self.__process_mini_batch(self.network, inputs, outputs)
                         # step
                         torch.cuda.nvtx.range_pop()
                         training_loss_sum += loss
                         training_loss_sum_logging += loss.item()
 
-                        if batchid != 0 and (batchid + 1) % self.parameters.training_report_frequency == 0:
+                        if batchid != 0 and (batchid + 1) % self.parameters.training_log_interval == 0:
                             torch.cuda.synchronize()
                             sample_time = time.time() - tsample
-                            avg_sample_time = sample_time / self.parameters.training_report_frequency
-                            avg_sample_tput = self.parameters.training_report_frequency * inputs.shape[0] / sample_time
-                            printout(f"batch {batchid + 1}, "#/{total_samples}, "
-                                     f"train avg time: {avg_sample_time} "
-                                     f"train avg throughput: {avg_sample_tput}",
-                                     min_verbosity=3)
+                            avg_sample_time = sample_time / self.parameters.training_log_interval
+                            avg_sample_tput = self.parameters.training_log_interval * inputs.shape[0] / sample_time
+                            printout(
+                                f"batch {batchid + 1}, "#/{total_samples}, "
+                                f"train avg time: {avg_sample_time} "
+                                f"train avg throughput: {avg_sample_tput}",
+                                min_verbosity=3
+                            )
                             tsample = time.time()
 
                             # summary_writer tensor board
-                            if self.parameters.visualisation:
-                                training_loss_mean = training_loss_sum_logging / self.parameters.training_report_frequency
+                            if self.parameters.logging:
+                                training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
                                 self.tensor_board.add_scalars(
-                                    'Loss', {'training': training_loss_mean}, total_batch_id
+                                    'ldos', {'during_training': training_loss_mean}, total_batch_id
                                 )
                                 self.tensor_board.close()
                                 training_loss_sum_logging = 0.0
@@ -376,40 +343,47 @@ class TrainerMLP(RunnerMLP):
                 batchid = 0
                 for loader in self.training_data_loaders:
                     for (inputs, outputs) in loader:
-                        inputs = inputs.to(
-                            self.parameters._configuration["device"])
-                        outputs = outputs.to(
-                            self.parameters._configuration["device"])
+                        inputs = inputs.to(self.parameters._configuration["device"])
+                        outputs = outputs.to(self.parameters._configuration["device"])
                         training_loss_sum += self.__process_mini_batch(self.network, inputs, outputs)
                         batchid += 1
                 training_loss = training_loss_sum.item() / batchid
-
-            vloss = self.__validate_network(self.network,
-                                            "validation",
-                                            self.parameters.
-                                            during_training_metric)
-
-            if self.parameters_full.use_horovod:
-                vloss = self.__average_validation(vloss, 'average_loss')
+            dataset_fractions = ["validation"]
+            if self.parameters.validate_on_training_data:
+                dataset_fractions.append("train")
+            errors = self.__validate_network(
+                dataset_fractions,
+                self.parameters.validation_metrics
+            )
+            for dataset_fraction in dataset_fractions:
+                for metric in errors[dataset_fraction]:
+                    errors[dataset_fraction][metric] = np.mean(
+                        errors[dataset_fraction][metric]
+                    )
+            vloss = errors["validation"][self.parameters.during_training_metric]
             if self.parameters_full.verbosity > 1:
-                printout(f"Epoch {epoch}: validation data loss: {vloss:.3e}, "
-                         f"training data loss: {training_loss:.3e}",
-                         min_verbosity=2)
+                printout("Errors:", errors, min_verbosity=2)
             else:
-                printout(f"Epoch {epoch}: validation data loss: {vloss:.3e}",
-                         min_verbosity=1)
+                printout(
+                    f"Epoch {epoch}: validation data loss: {vloss:.3e}",
+                    min_verbosity=1
+                )
 
             # summary_writer tensor board
-            if self.parameters.visualisation:
-                self.tensor_board.add_scalars(
-                    'Loss', {'validation': vloss}, total_batch_id
-                )
-                if self.parameters.visualisation == 2:
-                    for name, param in self.network.named_parameters():
-                        self.tensor_board.add_histogram(name, param, epoch)
-                        self.tensor_board.add_histogram(
-                            f'{name}.grad', param.grad, epoch
+            if self.parameters.logging:
+                for dataset_fraction in dataset_fractions:
+                    for metric in errors[dataset_fraction]:
+                        self.tensor_board.add_scalars(
+                            metric, {
+                                dataset_fraction: errors[dataset_fraction][metric]
+                            }, total_batch_id
                         )
+                # if self.parameters.logging == 2:
+                #     for name, param in self.network.named_parameters():
+                #         self.tensor_board.add_histogram(name, param, epoch)
+                #         self.tensor_board.add_histogram(
+                #             f'{name}.grad', param.grad, epoch
+                #         )
                 self.tensor_board.close()
 
             if self.parameters._configuration["gpu"]:
@@ -458,36 +432,9 @@ class TrainerMLP(RunnerMLP):
                     self.__create_training_checkpoint()
                     checkpoint_counter = 0
 
-            printout("Time for epoch[s]:", time.time() - start_time,
-                     min_verbosity=2)
-
-        ############################
-        # CALCULATE FINAL METRICS
-        ############################
-
-        if self.parameters.after_before_training_metric != \
-                self.parameters.during_training_metric:
-            vloss = self.__validate_network(self.network,
-                                            "validation",
-                                            self.parameters.
-                                            after_before_training_metric)
-            if self.parameters_full.use_horovod:
-                vloss = self.__average_validation(vloss, 'average_loss')
-
-        # Calculate final loss.
-        self.final_validation_loss = vloss
-        printout(f"Final validation data loss: {vloss:.3e}", min_verbosity=0)
-
-        tloss = float("inf")
-        if len(self.data.test_data_sets) > 0:
-            tloss = self.__validate_network(self.network,
-                                            "test",
-                                            self.parameters.
-                                            after_before_training_metric)
-            if self.parameters_full.use_horovod:
-                tloss = self.__average_validation(tloss, 'average_loss')
-            printout("Final test data loss: ", tloss, min_verbosity=0)
-        self.final_test_loss = tloss
+            printout(
+                "Time for epoch[s]:", time.time() - start_time, min_verbosity=2
+            )
 
         # Clean-up for pre-fetching lazy loading.
         if self.data.parameters.use_lazy_loading_prefetch:
@@ -517,27 +464,27 @@ class TrainerMLP(RunnerMLP):
                     * hvd.size()
 
         # Choose an optimizer to use.
-        if self.parameters.trainingtype == "SGD":
+        if self.parameters.optimizer == "SGD":
             self.optimizer = optim.SGD(self.network.parameters(),
                                       lr=self.parameters.learning_rate,
                                       weight_decay=self.parameters.
                                       weight_decay)
-        elif self.parameters.trainingtype == "Adam":
+        elif self.parameters.optimizer == "Adam":
             self.optimizer = optim.Adam(self.network.parameters(),
                                         lr=self.parameters.learning_rate,
                                         weight_decay=self.parameters.
                                         weight_decay)
-        elif self.parameters.trainingtype == "FusedAdam":
+        elif self.parameters.optimizer == "FusedAdam":
             if version.parse(torch.__version__) >= version.parse("1.13.0"):
                 self.optimizer = optim.Adam(self.network.parameters(),
                                            lr=self.parameters.learning_rate,
                                            weight_decay=self.parameters.
                                            weight_decay, fused=True)
             else:
-                raise Exception("Training method requires "
+                raise Exception("Optimizer requires "
                                 "at least torch 1.13.0.")
         else:
-            raise Exception("Unsupported training method.")
+            raise Exception("Unsupported optimizer.")
 
         # Load data from pytorch file.
         if optimizer_dict is not None:
@@ -774,229 +721,126 @@ class TrainerMLP(RunnerMLP):
             self.optimizer.zero_grad()
             return loss
 
-    def __validate_network(self, network, data_set_type, validation_type):
-        """Validate a network, using test or validation data."""
-        if data_set_type == "test":
-            data_loaders = self.test_data_loaders
-            data_sets = self.data.test_data_sets
-            number_of_snapshots = self.data.nr_test_snapshots
-            offset_snapshots = self.data.nr_validation_snapshots + \
-                               self.data.nr_training_snapshots
+    def __validate_network(self, data_set_fractions, metrics):
+        # """Validate a network, using train, test or validation data."""
+        self.network.eval()
+        errors = {}
+        for data_set_type in data_set_fractions:
+            if data_set_type == "train":
+                data_loaders = self.training_data_loaders
+                data_sets = self.data.training_data_sets
+                number_of_snapshots = self.data.nr_training_snapshots
+                offset_snapshots = 0
 
-        elif data_set_type == "validation":
-            data_loaders = self.validation_data_loaders
-            data_sets = self.data.validation_data_sets
-            number_of_snapshots = self.data.nr_validation_snapshots
-            offset_snapshots = self.data.nr_training_snapshots
-
-        else:
-            raise Exception("Please select test or validation"
-                            "when using this function.")
-        network.eval()
-        if validation_type == "ldos":
-            validation_loss_sum = torch.zeros(1, device=self.parameters.
-                                              _configuration["device"])
-            with torch.no_grad():
-                if self.parameters._configuration["gpu"]:
-                    report_freq = self.parameters.training_report_frequency
-                    torch.cuda.synchronize()
-                    tsample = time.time()
-                    batchid = 0
-                    for loader in data_loaders:
-                        for (x, y) in tqdm(
-                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
-                            total=len(loader)
-                        ):
-                            x = x.to(self.parameters._configuration["device"],
-                                     non_blocking=True)
-                            y = y.to(self.parameters._configuration["device"],
-                                     non_blocking=True)
-
-                            if self.parameters.use_graphs and self.validation_graph is None:
-                                printout("Capturing CUDA graph for validation.", min_verbosity=2)
-                                s = torch.cuda.Stream()
-                                s.wait_stream(torch.cuda.current_stream())
-                                # Warmup for graphs
-                                with torch.cuda.stream(s):
-                                    for _ in range(20):
-                                        with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                            prediction = network(x)
-                                            loss = network.calculate_loss(prediction, y)
-                                torch.cuda.current_stream().wait_stream(s)
-
-                                # Create static entry point tensors to graph
-                                self.static_input_validation = torch.empty_like(x)
-                                self.static_target_validation = torch.empty_like(y)
-
-                                # Capture graph
-                                self.validation_graph = torch.cuda.CUDAGraph()
-                                with torch.cuda.graph(self.validation_graph):
-                                    with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                        self.static_prediction_validation = network(self.static_input_validation)
-                                        self.static_loss_validation = network.calculate_loss(self.static_prediction_validation, self.static_target_validation)
-
-                            if self.validation_graph:
-                                self.static_input_validation.copy_(x)
-                                self.static_target_validation.copy_(y)
-                                self.validation_graph.replay()
-                                validation_loss_sum += self.static_loss_validation
-                            else:
-                                with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                    prediction = network(x)
-                                if hasattr(network, "calculate_loss"):
-                                    loss = network.calculate_loss(prediction, y).item()
-                                else:
-                                    loss = network.module.calculate_loss(prediction, y).item()
-                                    validation_loss_sum += loss
-                            if batchid != 0 and (batchid + 1) % report_freq == 0:
-                                torch.cuda.synchronize()
-                                sample_time = time.time() - tsample
-                                avg_sample_time = sample_time / report_freq
-                                avg_sample_tput = report_freq * x.shape[0] / sample_time
-                                printout(f"batch {batchid + 1}, " #/{total_samples}, "
-                                         f"validation avg time: {avg_sample_time} "
-                                         f"validation avg throughput: {avg_sample_tput}",
-                                         min_verbosity=3)
-                                tsample = time.time()
-                            batchid += 1
-                    torch.cuda.synchronize()
-                else:
-                    batchid = 0
-                    for loader in data_loaders:
-                        for (x, y) in loader:
-                            x = x.to(self.parameters._configuration["device"])
-                            y = y.to(self.parameters._configuration["device"])
-                            prediction = network(x)
-                            if hasattr(network, "calculate_loss"):
-                                validation_loss_sum += \
-                                    network.calculate_loss(prediction, y).item()
-                            else:
-                                validation_loss_sum += \
-                                    network.module.calculate_loss(prediction, y).item()
-                            batchid += 1
-
-            validation_loss = validation_loss_sum.item() / batchid
-            return validation_loss
-        elif validation_type == "band_energy" or \
-                validation_type == "total_energy":
-            errors = []
-            if isinstance(self.validation_data_loaders,
-                          MultiLazyLoadDataLoader):
-                loader_id = 0
-                for loader in data_loaders:
-                    grid_size = self.data.parameters. \
-                        snapshot_directories_list[loader_id +
-                                                  offset_snapshots].grid_size
-
-                    actual_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension))
-                    predicted_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension))
-                    last_start = 0
-
-                    for (x, y) in tqdm(
-                        loader, desc="validation", disable=self.parameters_full.verbosity < 2,
-                        total=len(loader)
-                    ):
-
-                        x = x.to(self.parameters._configuration["device"])
-                        length = int(x.size()[0])
-                        predicted_outputs[last_start:last_start + length,
-                        :] = \
-                            self.data.output_data_scaler. \
-                                inverse_transform(self.network(x).
-                                                  to('cpu'), as_numpy=True)
-                        actual_outputs[last_start:last_start + length, :] = \
-                            self.data.output_data_scaler. \
-                                inverse_transform(y, as_numpy=True)
-
-                        last_start += length
-                    errors.append(self._calculate_energy_errors(actual_outputs,
-                                                                predicted_outputs,
-                                                                validation_type,
-                                                                loader_id+offset_snapshots))
-                    loader_id += 1
-
+            elif data_set_type == "validation":
+                data_loaders = self.validation_data_loaders
+                data_sets = self.data.validation_data_sets
+                number_of_snapshots = self.data.nr_validation_snapshots
+                offset_snapshots = self.data.nr_training_snapshots
+                
+            elif data_set_type == "test":
+                data_loaders = self.test_data_loaders
+                data_sets = self.data.test_data_sets
+                number_of_snapshots = self.data.nr_test_snapshots
+                offset_snapshots = self.data.nr_validation_snapshots + \
+                    self.data.nr_training_snapshots
             else:
+                raise Exception(f"Dataset type ({data_set_type}) not recognized.")
+            
+            errors[data_set_type] = {}
+            for metric in metrics:
+                errors[data_set_type][metric] = []
+                
+            if isinstance(data_loaders[0], MultiLazyLoadDataLoader):
+                raise Exception("MultiLazyLoadDataLoader not supported.")
+            
+            with torch.no_grad():
                 for snapshot_number in trange(
                     offset_snapshots, number_of_snapshots+offset_snapshots,
                     desc="Validation"
                 ):
                     # Get optimal batch size and number of batches per snapshotss
-                    grid_size = self.data.parameters.\
-                        snapshot_directories_list[snapshot_number].grid_size
+                    grid_size = self.data.parameters.snapshot_directories_list[snapshot_number].grid_size
 
-                    optimal_batch_size = self. \
-                        _correct_batch_size_for_testing(grid_size,
-                                                        self.parameters.
-                                                        mini_batch_size)
-                    number_of_batches_per_snapshot = int(grid_size /
-                                                         optimal_batch_size)
+                    optimal_batch_size = self._correct_batch_size_for_testing(
+                        grid_size, self.parameters.mini_batch_size
+                    )
+                    number_of_batches_per_snapshot = int(grid_size / optimal_batch_size)
 
-                    actual_outputs, \
-                    predicted_outputs = self.\
-                        _forward_entire_snapshot(snapshot_number,
-                                                 data_sets[0], data_set_type[0:2],
-                                                 number_of_batches_per_snapshot,
-                                                 optimal_batch_size)
+                    actual_outputs, predicted_outputs = self._forward_entire_snapshot(
+                        snapshot_number, data_sets[0], data_set_type[0:2],
+                        number_of_batches_per_snapshot, optimal_batch_size
+                    )
+                    
+                    if "ldos" in metrics:
+                        error = ((actual_outputs-predicted_outputs)**2).mean()
+                        errors[data_set_type]["ldos"].append(error)
+                    
+                    energy_metrics = [metric for metric in metrics if "energy" in metric]
+                    energy_errors = self._calculate_energy_errors(
+                        actual_outputs, predicted_outputs, energy_metrics, snapshot_number
+                    )
+                    for metric in energy_metrics:
+                        errors[data_set_type][metric].append(energy_errors[metric])
+        return errors
 
-                    errors.append(self._calculate_energy_errors(actual_outputs,
-                                                                predicted_outputs,
-                                                                validation_type,
-                                                                snapshot_number))
-            return np.mean(errors)
-        else:
-            raise Exception("Selected validation method not supported.")
-
-    def _calculate_energy_errors(self, actual_outputs, predicted_outputs,
-                                 energy_type, snapshot_number):
-        self.data.target_calculator.\
-            read_additional_calculation_data(self.data.
-                                             get_snapshot_calculation_output(snapshot_number))
-        if energy_type == "band_energy":
-            try:
-                fe_actual = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(actual_outputs)
-                be_actual = self.data.target_calculator. \
-                    get_band_energy(actual_outputs, fermi_energy=fe_actual)
-
-                fe_predicted = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(predicted_outputs)
-                be_predicted = self.data.target_calculator. \
-                    get_band_energy(predicted_outputs,
-                                    fermi_energy=fe_predicted)
-                return np.abs(be_predicted - be_actual) * \
-                       (1000 / len(self.data.target_calculator.atoms))
-            except ValueError:
+    def _calculate_energy_errors(
+        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
+    ):
+        self.data.target_calculator.read_additional_calculation_data(
+            self.data.get_snapshot_calculation_output(snapshot_number)
+        )
+            
+        errors = {}
+        try:
+            fe_actual = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(actual_outputs)
+            fe_predicted = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(predicted_outputs)
+        except ValueError:
                 # If the training went badly, it might be that the above
                 # code results in an error, due to the LDOS being so wrong
                 # that the estimation of the self consistent Fermi energy
                 # fails.
-                return float("inf")
-        elif energy_type == "total_energy":
-            try:
-                fe_actual = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(actual_outputs)
-                be_actual = self.data.target_calculator. \
-                    get_total_energy(ldos_data=actual_outputs,
-                                     fermi_energy=fe_actual)
-
-                fe_predicted = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(predicted_outputs)
-                be_predicted = self.data.target_calculator. \
-                    get_total_energy(ldos_data=predicted_outputs,
-                                    fermi_energy=fe_predicted)
-                return np.abs(be_predicted - be_actual) * \
-                       (1000 / len(self.data.target_calculator.atoms))
-            except ValueError:
-                # If the training went badly, it might be that the above
-                # code results in an error, due to the LDOS being so wrong
-                # that the estimation of the self consistent Fermi energy
-                # fails.
-                return float("inf")
-
-        else:
-            raise Exception("Invalid energy type requested.")
+            errors = {
+                "fermi_energy": float("inf"),
+                "band_energy": float("inf"),
+                "total_energy": float("inf")
+            }
+            return errors
+        for energy_type in energy_types:
+            if energy_type == "fermi_energy":
+                fe_error = np.abs(fe_predicted - fe_actual)
+                errors["fermi_energy"] = fe_error
+            elif energy_type == "band_energy":
+                try:
+                    be_actual = self.data.target_calculator.get_band_energy(
+                        actual_outputs, fermi_energy=fe_actual
+                    )
+                    be_predicted = self.data.target_calculator.get_band_energy(
+                        predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    be_error = np.abs(be_predicted - be_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["band_energy"] = be_error
+                except ValueError:
+                    errors["band_energy"] = float("inf")
+            elif energy_type == "total_energy":
+                try:
+                    te_actual = self.data.target_calculator.get_total_energy(
+                        ldos_data=actual_outputs, fermi_energy=fe_actual
+                    )
+                    te_predicted = self.data.target_calculator.get_total_energy(
+                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    te_error = np.abs(te_predicted - te_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["total_energy"] = te_error
+                except ValueError:
+                    errors["total_energy"] = float("inf")
+            else:
+                raise Exception(f"Invalid energy type ({energy_type}) requested.")
+        return errors
 
 
     def __create_training_checkpoint(self):
@@ -1042,13 +886,13 @@ class TrainerMLP(RunnerMLP):
         return avg_loss.item()
 
 
-class TrainerGraph(RunnerGraph):
+class TrainerGNN(RunnerGraph):
     """A class for training a graph neural network.
 
     Parameters
     ----------
     params : mala.common.parametes.Parameters
-        Parameters used to create this TrainerGraph object.
+        Parameters used to create this TrainerGNN object.
 
     network : mala.network.network.Network
         Network which is being trained.
@@ -1062,7 +906,7 @@ class TrainerGraph(RunnerGraph):
 
     def __init__(self, params, network, data, optimizer_dict=None):
         # copy the parameters into the class.
-        super(TrainerGraph, self).__init__(params, network, data)
+        super(TrainerGNN, self).__init__(params, network, data)
         self.final_test_loss = float("inf")
         self.initial_test_loss = float("inf")
         self.final_validation_loss = float("inf")
@@ -1086,27 +930,27 @@ class TrainerGraph(RunnerGraph):
         self.__prepare_to_train(optimizer_dict)
 
         self.tensor_board = None
-        self.full_visualization_path = None
-        if self.parameters.visualisation:
-            if not os.path.exists(self.parameters.visualisation_dir):
-                os.makedirs(self.parameters.visualisation_dir)
-            if self.parameters.visualisation_dir_append_date:
+        self.full_logging_path = None
+        if self.parameters.logging:
+            if not os.path.exists(self.parameters.logging_dir):
+                os.makedirs(self.parameters.logging_dir)
+            if self.parameters.logging_dir_append_date:
                 date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
                 if len(self.parameters.run_name) > 0:
                     name = self.parameters.run_name + "_" + date_time
                 else:
                     name = date_time
-                self.full_visualization_path = \
-                    os.path.join(self.parameters.visualisation_dir, name)
-                os.makedirs(self.full_visualization_path)
+                self.full_logging_path = \
+                    os.path.join(self.parameters.logging_dir, name)
+                os.makedirs(self.full_logging_path)
             else:
-                self.full_visualization_path = \
-                    self.parameters.visualisation_dir
+                self.full_logging_path = \
+                    self.parameters.logging_dir
 
             # Set the path to log files
-            self.tensor_board = SummaryWriter(self.full_visualization_path)
-            printout("Writing visualization output to",
-                     self.full_visualization_path, min_verbosity=1)
+            self.tensor_board = SummaryWriter(self.full_logging_path)
+            printout("Writing logging output to",
+                     self.full_logging_path, min_verbosity=1)
 
         self.gradscaler = None
         if self.parameters.use_mixed_precision:
@@ -1192,11 +1036,11 @@ class TrainerGraph(RunnerGraph):
         new_datahandler : mala.datahandling.data_handler.DataHandler
             The data handler reconstructed from file.
 
-        new_TrainerGraph : TrainerGraph
+        new_TrainerGNN : TrainerGNN
             (Optional) The runner reconstructed from file. For Tester and
             Predictor class, this is just a newly instantiated object.
         """
-        return super(TrainerGraph, cls).load_run(run_name, path=path,
+        return super(TrainerGNN, cls).load_run(run_name, path=path,
                                             zip_run=zip_run,
                                             params_format=params_format,
                                             load_runner=load_runner,
@@ -1205,16 +1049,16 @@ class TrainerGraph(RunnerGraph):
     @classmethod
     def _load_from_run(cls, params, network, data, file=None):
         """
-        Load a TrainerGraph from a file.
+        Load a TrainerGNN from a file.
 
         Parameters
         ----------
         params : mala.common.parameters.Parameters
-            Parameters object with which the TrainerGraph should be created.
+            Parameters object with which the TrainerGNN should be created.
             Has to be compatible with network and data.
 
         file : string
-            Path to the file from which the TrainerGraph should be loaded.
+            Path to the file from which the TrainerGNN should be loaded.
 
         network : mala.network.network.Network
             Network which is being trained.
@@ -1225,16 +1069,16 @@ class TrainerGraph(RunnerGraph):
 
         Returns
         -------
-        loaded_TrainerGraph : Network
-            The TrainerGraph that was loaded from the file.
+        loaded_TrainerGNN : Network
+            The TrainerGNN that was loaded from the file.
         """
         # First, load the checkpoint.
         checkpoint = torch.load(file)
 
-        # Now, create the TrainerGraph class with it.
-        loaded_TrainerGraph = TrainerGraph(params, network, data,
+        # Now, create the TrainerGNN class with it.
+        loaded_TrainerGNN = TrainerGNN(params, network, data,
                                  optimizer_dict=checkpoint)
-        return loaded_TrainerGraph
+        return loaded_TrainerGNN
 
     def calculate_initial_metrics(self):
         ############################
@@ -1272,7 +1116,7 @@ class TrainerGraph(RunnerGraph):
         self.initial_test_loss = tloss
 
 
-        if self.parameters.visualisation:
+        if self.parameters.logging:
             self.tensor_board.add_scalars(
                 'Loss', {'validation': vloss}, 0
             )
@@ -1392,11 +1236,11 @@ class TrainerGraph(RunnerGraph):
                         training_loss_sum += loss_float
                         training_loss_sum_logging += loss_float
 
-                        if batchid != 0 and (batchid + 1) % self.parameters.training_report_frequency == 0:
+                        if batchid != 0 and (batchid + 1) % self.parameters.training_log_interval == 0:
                             torch.cuda.synchronize()
                             sample_time = time.time() - tsample
-                            avg_sample_time = sample_time / self.parameters.training_report_frequency
-                            avg_sample_tput = self.parameters.training_report_frequency \
+                            avg_sample_time = sample_time / self.parameters.training_log_interval
+                            avg_sample_tput = self.parameters.training_log_interval \
                                 * (graph_grid.num_nodes()-graph_ions.num_nodes()) / sample_time
                             printout(f"batch {batchid + 1}, "#/{total_samples}, "
                                      f"train avg time: {avg_sample_time} "
@@ -1406,8 +1250,8 @@ class TrainerGraph(RunnerGraph):
                         
 
                             # summary_writer tensor board
-                            if self.parameters.visualisation:
-                                training_loss_mean = training_loss_sum_logging / self.parameters.training_report_frequency
+                            if self.parameters.logging:
+                                training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
                                 self.tensor_board.add_scalars(
                                     'Loss', {'training': training_loss_mean}, total_batch_id
                                 )
@@ -1471,14 +1315,14 @@ class TrainerGraph(RunnerGraph):
                 )
 
             # summary_writer tensor board
-            if self.parameters.visualisation:
+            if self.parameters.logging:
                 self.tensor_board.add_scalars(
                     'Loss', {
                         f'validation_{self.parameters.during_training_metric}': vloss
                     }, total_batch_id
                 )
                 # Not working for now
-                # if self.parameters.visualisation >= 2:
+                # if self.parameters.logging >= 2:
                 #     for name, param in self.network.named_parameters():
                 #         self.tensor_board.add_histogram(name, param, epoch)
                 #         self.tensor_board.add_histogram(
@@ -1602,13 +1446,13 @@ class TrainerGraph(RunnerGraph):
                     * hvd.size()
 
         # Choose an optimizer to use.
-        if self.parameters.trainingtype == "SGD":
+        if self.parameters.optimizer == "SGD":
             raise Exception("SGD is not supported.")
             # self.optimizer = optim.SGD(self.network.parameters(),
             #                           lr=self.parameters.learning_rate,
             #                           weight_decay=self.parameters.
             #                           weight_decay)
-        elif self.parameters.trainingtype == "Adam":
+        elif self.parameters.optimizer == "Adam":
             # self.optimizer = optim.Adam(self.network.parameters(),
             #                             lr=self.parameters.learning_rate,
             #                             weight_decay=self.parameters.
@@ -1623,7 +1467,7 @@ class TrainerGraph(RunnerGraph):
                 lr=self.parameters.learning_rate,
                 weight_decay=self.parameters.weight_decay
             )
-        elif self.parameters.trainingtype == "FusedAdam":
+        elif self.parameters.optimizer == "FusedAdam":
             raise Exception("FusedAdam is not supported.")
             # if version.parse(torch.__version__) >= version.parse("1.13.0"):
             #     self.optimizer = optim.Adam(self.network.parameters(),
@@ -1968,7 +1812,7 @@ class TrainerGraph(RunnerGraph):
             validation_loss_sum = 0
             with torch.no_grad():
                 if self.parameters._configuration["gpu"]:
-                    report_freq = self.parameters.training_report_frequency
+                    report_freq = self.parameters.training_log_interval
                     torch.cuda.synchronize()
                     tsample = time.time()
                     batchid = 0

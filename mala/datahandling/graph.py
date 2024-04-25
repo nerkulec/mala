@@ -208,7 +208,7 @@ def load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions):
   if randomize_ldos_grid_positions:
     rs = np.random.RandomState(hash(seed)%(2**32))
     rs.shuffle(random_permutation)
-  print(f"load_permuted_ldos {seed=}, {random_permutation[:20]=}")
+  # print(f"load_permuted_ldos {seed=}, {random_permutation[:20]=}")
   ldos = ldos[random_permutation]
   ldos = torch.tensor(ldos, dtype=torch.float32)
   return ldos
@@ -238,7 +238,7 @@ def get_ldos_graph_loader(
   if randomize_ldos_grid_positions:
     rs = np.random.RandomState(hash(seed)%(2**32))
     rs.shuffle(random_permutation)
-  print(f"get_ldos_graph_loader {seed=}, {random_permutation[:20]=}")
+  # print(f"get_ldos_graph_loader {seed=}, {random_permutation[:20]=}")
     
   cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
   
