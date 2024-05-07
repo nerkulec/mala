@@ -10,7 +10,7 @@ from mala.common.parameters import (
 )
 from mala.common.parallelizer import printout
 from mala.common.physical_data import PhysicalData
-from mala.datahandling.data_handler_base import DataHandlerBase
+from mala.datahandling.data_handler import DataHandler
 from mala.common.parallelizer import get_comm
 
 

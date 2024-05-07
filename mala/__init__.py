@@ -41,7 +41,6 @@ from .network import (
     HyperparameterOptuna,
     HyperparameterACSD,
     ACSDAnalyzer,
-    Runner,
 )
 from .targets import LDOS, DOS, Density, fermi_function, AtomicForce, Target
 from .interfaces import MALA

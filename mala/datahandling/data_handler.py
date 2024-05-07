@@ -25,7 +25,6 @@ from mala.common.parameters import Parameters, ParametersData, DEFAULT_NP_DATA_D
 from mala.datahandling.data_scaler import DataScaler
 from mala.datahandling.snapshot import Snapshot
 from mala.datahandling.lazy_load_dataset import LazyLoadDataset
-from mala.datahandling.lazy_load_dataset_clustered import LazyLoadDatasetClustered
 from mala.datahandling.lazy_load_dataset_single import LazyLoadDatasetSingle
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 from mala.datahandling.graph_dataset import GraphDataset

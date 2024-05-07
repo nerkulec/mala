@@ -526,19 +526,19 @@ class TrainerMLP(RunnerMLP):
                 )
 
         # Choose an optimizer to use.
-        if self.parameters.trainingtype == "SGD":
+        if self.parameters.optimizer == "SGD":
             self.optimizer = optim.SGD(
                 self.network.parameters(),
                 lr=self.parameters.learning_rate,
                 weight_decay=self.parameters.weight_decay,
             )
-        elif self.parameters.trainingtype == "Adam":
+        elif self.parameters.optimizer == "Adam":
             self.optimizer = optim.Adam(
                 self.network.parameters(),
                 lr=self.parameters.learning_rate,
                 weight_decay=self.parameters.weight_decay,
             )
-        elif self.parameters.trainingtype == "FusedAdam":
+        elif self.parameters.optimizer == "FusedAdam":
             if version.parse(torch.__version__) >= version.parse("1.13.0"):
                 self.optimizer = optim.Adam(
                     self.network.parameters(),
