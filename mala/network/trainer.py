@@ -24,6 +24,7 @@ from mala.datahandling.multi_lazy_load_data_loader import (
     MultiLazyLoadDataLoader,
 )
 
+from tqdm.auto import tqdm, trange
 
 class Trainer(Runner):
     """A class for training a neural network.
@@ -242,18 +243,19 @@ class Trainer(Runner):
         ############################
 
         tloss = float("inf")
-        vloss = self.__validate_network(
-            self.network,
-            "validation",
-            self.parameters.after_before_training_metric,
-        )
+        # vloss = self.__validate_network(
+        #     self.network,
+        #     "validation",
+        #     self.parameters.after_before_training_metric,
+        # )
+        vloss = float("inf")
 
-        if self.data.test_data_sets:
-            tloss = self.__validate_network(
-                self.network,
-                "test",
-                self.parameters.after_before_training_metric,
-            )
+        # if self.data.test_data_sets:
+        #     tloss = self.__validate_network(
+        #         self.network,
+        #         "test",
+        #         self.parameters.after_before_training_metric,
+        #     )
 
         # Collect and average all the losses from all the devices
         if self.parameters_full.use_horovod:
@@ -316,7 +318,10 @@ class Trainer(Runner):
                 t0 = time.time()
                 batchid = 0
                 for loader in self.training_data_loaders:
-                    for inputs, outputs in loader:
+                    t = time.time()
+                    for inputs, outputs in tqdm(loader):
+                        dt = time.time() - t
+                        printout(f"load time: {dt}")
 
                         if self.parameters.profiler_range is not None:
                             if batchid == self.parameters.profiler_range[0]:
@@ -327,6 +332,7 @@ class Trainer(Runner):
                         torch.cuda.nvtx.range_push(f"step {batchid}")
 
                         torch.cuda.nvtx.range_push("data copy in")
+                        t = time.time()
                         inputs = inputs.to(
                             self.parameters._configuration["device"],
                             non_blocking=True,
@@ -335,6 +341,8 @@ class Trainer(Runner):
                             self.parameters._configuration["device"],
                             non_blocking=True,
                         )
+                        dt = time.time() - t
+                        printout(f"data copy in time: {dt}")
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
@@ -372,6 +380,7 @@ class Trainer(Runner):
                             )
                             tsample = time.time()
                         batchid += 1
+                        t = time.time()
                 torch.cuda.synchronize(
                     self.parameters._configuration["device"]
                 )
@@ -874,17 +883,23 @@ class Trainer(Runner):
                     enabled=self.parameters.use_mixed_precision
                 ):
                     torch.cuda.nvtx.range_push("forward")
+                    t = time.time()
                     prediction = network(input_data)
+                    dt = time.time() - t
+                    printout(f"forward time: {dt}")
                     # forward
                     torch.cuda.nvtx.range_pop()
 
                     torch.cuda.nvtx.range_push("loss")
+                    t = time.time()
                     if hasattr(network, "module"):
                         loss = network.module.calculate_loss(
                             prediction, target_data
                         )
                     else:
                         loss = network.calculate_loss(prediction, target_data)
+                    dt = time.time() - t
+                    printout(f"loss time: {dt}")
                     # loss
                     torch.cuda.nvtx.range_pop()
 
@@ -893,12 +908,15 @@ class Trainer(Runner):
                 else:
                     loss.backward()
 
+            t = time.time()
             torch.cuda.nvtx.range_push("optimizer")
             if self.gradscaler:
                 self.gradscaler.step(self.optimizer)
                 self.gradscaler.update()
             else:
                 self.optimizer.step()
+            dt = time.time() - t
+            printout(f"optimizer time: {dt}")
             torch.cuda.nvtx.range_pop()  # optimizer
 
             if self.train_graph:
