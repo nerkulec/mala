@@ -1,4 +1,5 @@
 """Functions for operating MALA in parallel."""
+
 from collections import defaultdict
 import platform
 import warnings
@@ -14,6 +15,7 @@ use_mpi = False
 comm = None
 local_mpi_rank = None
 current_verbosity = 0
+lammps_instance = None
 
 
 def set_current_verbosity(new_value):
@@ -45,8 +47,10 @@ def set_horovod_status(new_value):
 
     """
     if use_mpi is True and new_value is True:
-        raise Exception("Cannot use horovod and inference-level MPI at "
-                        "the same time yet.")
+        raise Exception(
+            "Cannot use horovod and inference-level MPI at "
+            "the same time yet."
+        )
     global use_horovod
     use_horovod = new_value
 
@@ -65,8 +69,10 @@ def set_mpi_status(new_value):
 
     """
     if use_horovod is True and new_value is True:
-        raise Exception("Cannot use horovod and inference-level MPI at "
-                        "the same time yet.")
+        raise Exception(
+            "Cannot use horovod and inference-level MPI at "
+            "the same time yet."
+        )
     global use_mpi
     use_mpi = new_value
     if use_mpi:
@@ -78,6 +84,27 @@ def set_mpi_status(new_value):
     # else:
     #     global comm
     #     comm = MockCommunicator()
+
+
+def set_lammps_instance(new_instance):
+    """
+    Set a new LAMMPS instance to be targeted during the finalize call.
+
+    This currently has to be done in order for Kokkos to not through an
+    error when operating in GPU descriptor calculation mode.
+
+    Parameters
+    ----------
+    new_instance : lammps.LAMMPS
+        A LAMMPS instance currently in memory to be properly finalized at the
+        end of the script.
+
+    """
+    import lammps
+
+    global lammps_instance
+    if isinstance(new_instance, lammps.core.lammps):
+        lammps_instance = new_instance
 
 
 def get_rank():
@@ -141,7 +168,7 @@ def get_local_rank():
             ranks_nodes = comm.allgather((comm.Get_rank(), this_node))
             node2rankssofar = defaultdict(int)
             local_rank = None
-            for (rank, node) in ranks_nodes:
+            for rank, node in ranks_nodes:
                 if rank == comm.Get_rank():
                     local_rank = node2rankssofar[node]
                 node2rankssofar[node] += 1
@@ -183,13 +210,13 @@ def get_comm():
 def barrier():
     """General interface for a barrier."""
     if use_horovod:
-        hvd.allreduce(torch.tensor(0), name='barrier')
+        hvd.allreduce(torch.tensor(0), name="barrier")
     if use_mpi:
         comm.Barrier()
     return
 
 
-def printout(*values, sep=' ', min_verbosity=0):
+def printout(*values, sep=" ", min_verbosity=0):
     """
     Interface to built-in "print" for parallel runs. Can be used like print.
 
@@ -233,3 +260,9 @@ def parallel_warn(warning, min_verbosity=0, category=UserWarning):
     if current_verbosity >= min_verbosity:
         if get_rank() == 0:
             warnings.warn(warning, category=category)
+
+
+def finalize():
+    """Properly shut down lingering Kokkos/GPU instances."""
+    if lammps_instance is not None:
+        lammps_instance.finalize()

@@ -1,4 +1,5 @@
 """Trainer class for training a network."""
+
 import os
 import time
 from datetime import datetime
@@ -18,7 +19,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from mala.common.parameters import printout
-from mala.common.parallelizer import parallel_warn
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 from mala.network.network import Network
 from mala.network.runner import RunnerMLP, RunnerGraph
@@ -31,6 +31,7 @@ from tqdm.auto import tqdm, trange
 
 import dgl
 
+from tqdm.auto import tqdm, trange
 
 class Trainer:
     def __new__(cls, params, *args, **kwargs):
@@ -133,21 +134,36 @@ class TrainerMLP(RunnerMLP):
 
         """
         if zip_run is True:
-            return os.path.isfile(run_name+".zip")
+            return os.path.isfile(run_name + ".zip")
         else:
             network_name = run_name + ".network.pth"
             iscaler_name = run_name + ".iscaler.pkl"
             oscaler_name = run_name + ".oscaler.pkl"
-            param_name = run_name + ".params."+params_format
+            param_name = run_name + ".params." + params_format
             optimizer_name = run_name + ".optimizer.pth"
-            return all(map(os.path.isfile, [iscaler_name, oscaler_name,
-                                            param_name,
-                                            network_name, optimizer_name]))
+            return all(
+                map(
+                    os.path.isfile,
+                    [
+                        iscaler_name,
+                        oscaler_name,
+                        param_name,
+                        network_name,
+                        optimizer_name,
+                    ],
+                )
+            )
 
     @classmethod
-    def load_run(cls, run_name, path="./", zip_run=True,
-                 params_format="json", load_runner=True,
-                 prepare_data=True):
+    def load_run(
+        cls,
+        run_name,
+        path="./",
+        zip_run=True,
+        params_format="json",
+        load_runner=True,
+        prepare_data=True,
+    ):
         """
         Load a run.
 
@@ -189,11 +205,14 @@ class TrainerMLP(RunnerMLP):
             (Optional) The runner reconstructed from file. For Tester and
             Predictor class, this is just a newly instantiated object.
         """
-        return super(TrainerMLP, cls).load_run(run_name, path=path,
-                                            zip_run=zip_run,
-                                            params_format=params_format,
-                                            load_runner=load_runner,
-                                            prepare_data=prepare_data)
+        return super(Trainer, cls).load_run(
+            run_name,
+            path=path,
+            zip_run=zip_run,
+            params_format=params_format,
+            load_runner=load_runner,
+            prepare_data=prepare_data,
+        )
 
     @classmethod
     def _load_from_run(cls, params, network, data, file=None):
@@ -224,9 +243,10 @@ class TrainerMLP(RunnerMLP):
         # First, load the checkpoint.
         checkpoint = torch.load(file)
 
-        # Now, create the TrainerMLP class with it.
-        loaded_trainer = TrainerMLP(params, network, data,
-                                 optimizer_dict=checkpoint)
+        # Now, create the Trainer class with it.
+        loaded_trainer = Trainer(
+            params, network, data, optimizer_dict=checkpoint
+        )
         return loaded_trainer
 
     def train_network(self):
@@ -263,7 +283,9 @@ class TrainerMLP(RunnerMLP):
             training_loss_sum_logging = 0.0
 
             # Process each mini batch and save the training loss.
-            training_loss_sum = torch.zeros(1, device=self.parameters._configuration["device"])
+            training_loss_sum = torch.zeros(
+                1, device=self.parameters._configuration["device"]
+            )
 
             # train sampler
             if self.parameters_full.use_horovod:
@@ -273,35 +295,48 @@ class TrainerMLP(RunnerMLP):
             if isinstance(self.data.training_data_sets[0], FastTensorDataset):
                 self.data.training_data_sets[0].shuffle()
 
-            if self.parameters._configuration["gpu"]:
-                torch.cuda.synchronize()
+            if self.parameters._configuration["gpu"] > 0:
+                torch.cuda.synchronize(
+                    self.parameters._configuration["device"]
+                )
                 tsample = time.time()
                 t0 = time.time()
                 batchid = 0
                 for loader in self.training_data_loaders:
+                    t = time.time()
                     for (inputs, outputs) in tqdm(
                         loader, desc="training", disable=self.parameters_full.verbosity < 2,
                         total=len(loader)
                     ):
+                        dt = time.time() - t
+                        printout(f"load time: {dt}")
 
-                        if batchid == self.parameters.profiler_range[0]:
-                            torch.cuda.profiler.start()
-                        if batchid == self.parameters.profiler_range[1]:
-                            torch.cuda.profiler.stop()
+                        if self.parameters.profiler_range is not None:
+                            if batchid == self.parameters.profiler_range[0]:
+                                torch.cuda.profiler.start()
+                            if batchid == self.parameters.profiler_range[1]:
+                                torch.cuda.profiler.stop()
 
                         torch.cuda.nvtx.range_push(f"step {batchid}")
 
                         torch.cuda.nvtx.range_push("data copy in")
+                        t = time.time()
                         inputs = inputs.to(
-                            self.parameters._configuration["device"], non_blocking=True
+                            self.parameters._configuration["device"],
+                            non_blocking=True,
                         )
                         outputs = outputs.to(
-                            self.parameters._configuration["device"], non_blocking=True
+                            self.parameters._configuration["device"],
+                            non_blocking=True,
                         )
+                        dt = time.time() - t
+                        printout(f"data copy in time: {dt}")
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
-                        loss = self.__process_mini_batch(self.network, inputs, outputs)
+                        loss = self.__process_mini_batch(
+                            self.network, inputs, outputs
+                        )
                         # step
                         torch.cuda.nvtx.range_pop()
                         training_loss_sum += loss
@@ -331,14 +366,19 @@ class TrainerMLP(RunnerMLP):
 
                         batchid += 1
                         total_batch_id += 1
-                torch.cuda.synchronize()
+                        t = time.time()
+                torch.cuda.synchronize(
+                    self.parameters._configuration["device"]
+                )
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
 
                 training_loss = training_loss_sum.item() / batchid
 
                 # Calculate the validation loss. and output it.
-                torch.cuda.synchronize()
+                torch.cuda.synchronize(
+                    self.parameters._configuration["device"]
+                )
             else:
                 batchid = 0
                 for loader in self.training_data_loaders:
@@ -386,46 +426,62 @@ class TrainerMLP(RunnerMLP):
                 #         )
                 self.tensor_board.close()
 
-            if self.parameters._configuration["gpu"]:
-                torch.cuda.synchronize()
+            if self.parameters._configuration["gpu"] > 0:
+                torch.cuda.synchronize(
+                    self.parameters._configuration["device"]
+                )
 
             # Mix the DataSets up (this function only does something
             # in the lazy loading case).
             if self.parameters.use_shuffling_for_samplers:
                 self.data.mix_datasets()
-            if self.parameters._configuration["gpu"]:
-                torch.cuda.synchronize()
+            if self.parameters._configuration["gpu"] > 0:
+                torch.cuda.synchronize(
+                    self.parameters._configuration["device"]
+                )
 
             # If a scheduler is used, update it.
             if self.scheduler is not None:
-                if self.parameters.learning_rate_scheduler ==\
-                        "ReduceLROnPlateau":
+                if (
+                    self.parameters.learning_rate_scheduler
+                    == "ReduceLROnPlateau"
+                ):
                     self.scheduler.step(vloss)
 
             # If early stopping is used, check if we need to do something.
             if self.parameters.early_stopping_epochs > 0:
-                if vloss < vloss_old * (1.0 - self.parameters.
-                                        early_stopping_threshold):
+                if vloss < vloss_old * (
+                    1.0 - self.parameters.early_stopping_threshold
+                ):
                     self.patience_counter = 0
                     vloss_old = vloss
                 else:
                     self.patience_counter += 1
-                    printout("Validation accuracy has not improved "
-                             "enough.", min_verbosity=1)
-                    if self.patience_counter >= self.parameters.\
-                            early_stopping_epochs:
-                        printout("Stopping the training, validation "
-                                 "accuracy has not improved for",
-                                 self.patience_counter,
-                                 "epochs.", min_verbosity=1)
+                    printout(
+                        "Validation accuracy has not improved enough.",
+                        min_verbosity=1,
+                    )
+                    if (
+                        self.patience_counter
+                        >= self.parameters.early_stopping_epochs
+                    ):
+                        printout(
+                            "Stopping the training, validation "
+                            "accuracy has not improved for",
+                            self.patience_counter,
+                            "epochs.",
+                            min_verbosity=1,
+                        )
                         self.last_epoch = epoch
                         break
 
             # If checkpointing is enabled, we need to checkpoint.
             if self.parameters.checkpoints_each_epoch != 0:
                 checkpoint_counter += 1
-                if checkpoint_counter >= \
-                        self.parameters.checkpoints_each_epoch:
+                if (
+                    checkpoint_counter
+                    >= self.parameters.checkpoints_each_epoch
+                ):
                     printout("Checkpointing training.", min_verbosity=0)
                     self.last_epoch = epoch
                     self.last_loss = vloss_old
@@ -446,40 +502,50 @@ class TrainerMLP(RunnerMLP):
     def __prepare_to_train(self, optimizer_dict):
         """Prepare everything for training."""
         # Configure keyword arguments for DataSampler.
-        kwargs = {'num_workers': self.parameters.num_workers,
-                  'pin_memory': False}
-        if self.parameters_full.use_gpu:
-            kwargs['pin_memory'] = True
+        kwargs = {
+            "num_workers": self.parameters.num_workers,
+            "pin_memory": False,
+        }
+        if self.parameters_full.use_gpu > 0:
+            kwargs["pin_memory"] = True
 
         # Read last epoch
-        if optimizer_dict is not None: 
-            self.last_epoch = optimizer_dict['epoch']+1
+        if optimizer_dict is not None:
+            self.last_epoch = optimizer_dict["epoch"] + 1
 
         # Scale the learning rate according to horovod.
         if self.parameters_full.use_horovod:
             if hvd.size() > 1 and self.last_epoch == 0:
-                printout("Rescaling learning rate because multiple workers are"
-                         " used for training.", min_verbosity=1)
-                self.parameters.learning_rate = self.parameters.learning_rate \
-                    * hvd.size()
+                printout(
+                    "Rescaling learning rate because multiple workers are"
+                    " used for training.",
+                    min_verbosity=1,
+                )
+                self.parameters.learning_rate = (
+                    self.parameters.learning_rate * hvd.size()
+                )
 
         # Choose an optimizer to use.
-        if self.parameters.optimizer == "SGD":
-            self.optimizer = optim.SGD(self.network.parameters(),
-                                      lr=self.parameters.learning_rate,
-                                      weight_decay=self.parameters.
-                                      weight_decay)
-        elif self.parameters.optimizer == "Adam":
-            self.optimizer = optim.Adam(self.network.parameters(),
-                                        lr=self.parameters.learning_rate,
-                                        weight_decay=self.parameters.
-                                        weight_decay)
-        elif self.parameters.optimizer == "FusedAdam":
+        if self.parameters.trainingtype == "SGD":
+            self.optimizer = optim.SGD(
+                self.network.parameters(),
+                lr=self.parameters.learning_rate,
+                weight_decay=self.parameters.weight_decay,
+            )
+        elif self.parameters.trainingtype == "Adam":
+            self.optimizer = optim.Adam(
+                self.network.parameters(),
+                lr=self.parameters.learning_rate,
+                weight_decay=self.parameters.weight_decay,
+            )
+        elif self.parameters.trainingtype == "FusedAdam":
             if version.parse(torch.__version__) >= version.parse("1.13.0"):
-                self.optimizer = optim.Adam(self.network.parameters(),
-                                           lr=self.parameters.learning_rate,
-                                           weight_decay=self.parameters.
-                                           weight_decay, fused=True)
+                self.optimizer = optim.Adam(
+                    self.network.parameters(),
+                    lr=self.parameters.learning_rate,
+                    weight_decay=self.parameters.weight_decay,
+                    fused=True,
+                )
             else:
                 raise Exception("Optimizer requires "
                                 "at least torch 1.13.0.")
@@ -488,17 +554,21 @@ class TrainerMLP(RunnerMLP):
 
         # Load data from pytorch file.
         if optimizer_dict is not None:
-            self.optimizer.\
-                load_state_dict(optimizer_dict['optimizer_state_dict'])
-            self.patience_counter = optimizer_dict['early_stopping_counter']
-            self.last_loss = optimizer_dict['early_stopping_last_loss']
+            self.optimizer.load_state_dict(
+                optimizer_dict["optimizer_state_dict"]
+            )
+            self.patience_counter = optimizer_dict["early_stopping_counter"]
+            self.last_loss = optimizer_dict["early_stopping_last_loss"]
 
         if self.parameters_full.use_horovod:
             # scaling the batch size for multiGPU per node
             # self.batch_size= self.batch_size*hvd.local_size()
 
-            compression = hvd.Compression.fp16 if self.parameters_full.\
-                running.use_compression else hvd.Compression.none
+            compression = (
+                hvd.Compression.fp16
+                if self.parameters_full.running.use_compression
+                else hvd.Compression.none
+            )
 
             # If lazy loading is used we do not shuffle the data points on
             # their own, but rather shuffle them
@@ -509,24 +579,33 @@ class TrainerMLP(RunnerMLP):
             if self.data.parameters.use_lazy_loading:
                 do_shuffle = False
 
-            self.train_sampler = torch.utils.data.\
-                distributed.DistributedSampler(self.data.training_data_sets[0],
-                                               num_replicas=hvd.size(),
-                                               rank=hvd.rank(),
-                                               shuffle=do_shuffle)
+            self.train_sampler = (
+                torch.utils.data.distributed.DistributedSampler(
+                    self.data.training_data_sets[0],
+                    num_replicas=hvd.size(),
+                    rank=hvd.rank(),
+                    shuffle=do_shuffle,
+                )
+            )
 
-            self.validation_sampler = torch.utils.data.\
-                distributed.DistributedSampler(self.data.validation_data_sets[0],
-                                               num_replicas=hvd.size(),
-                                               rank=hvd.rank(),
-                                               shuffle=False)
+            self.validation_sampler = (
+                torch.utils.data.distributed.DistributedSampler(
+                    self.data.validation_data_sets[0],
+                    num_replicas=hvd.size(),
+                    rank=hvd.rank(),
+                    shuffle=False,
+                )
+            )
 
             if self.data.test_data_sets:
-                self.test_sampler = torch.utils.data.\
-                    distributed.DistributedSampler(self.data.test_data_sets[0],
-                                                   num_replicas=hvd.size(),
-                                                   rank=hvd.rank(),
-                                                   shuffle=False)
+                self.test_sampler = (
+                    torch.utils.data.distributed.DistributedSampler(
+                        self.data.test_data_sets[0],
+                        num_replicas=hvd.size(),
+                        rank=hvd.rank(),
+                        shuffle=False,
+                    )
+                )
 
             # broadcaste parameters and optimizer state from root device to
             # other devices
@@ -534,30 +613,30 @@ class TrainerMLP(RunnerMLP):
             hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
 
             # Wraps the opimizer for multiGPU operation
-            self.optimizer = hvd.DistributedOptimizer(self.optimizer,
-                                                      named_parameters=
-                                                      self.network.
-                                                      named_parameters(),
-                                                      compression=compression,
-                                                      op=hvd.Average)
+            self.optimizer = hvd.DistributedOptimizer(
+                self.optimizer,
+                named_parameters=self.network.named_parameters(),
+                compression=compression,
+                op=hvd.Average,
+            )
 
         # Instantiate the learning rate scheduler, if necessary.
         if self.parameters.learning_rate_scheduler == "ReduceLROnPlateau":
-            self.scheduler = optim.\
-                lr_scheduler.ReduceLROnPlateau(self.optimizer,
-                                               patience=self.parameters.
-                                               learning_rate_patience,
-                                               mode="min",
-                                               factor=self.parameters.
-                                               learning_rate_decay,
-                                               verbose=True)
+            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer,
+                patience=self.parameters.learning_rate_patience,
+                mode="min",
+                factor=self.parameters.learning_rate_decay,
+                verbose=True,
+            )
         elif self.parameters.learning_rate_scheduler is None:
             pass
         else:
             raise Exception("Unsupported learning rate schedule.")
         if self.scheduler is not None and optimizer_dict is not None:
-            self.scheduler.\
-                load_state_dict(optimizer_dict['lr_scheduler_state_dict'])
+            self.scheduler.load_state_dict(
+                optimizer_dict["lr_scheduler_state_dict"]
+            )
 
         # If lazy loading is used we do not shuffle the data points on their
         # own, but rather shuffle them
@@ -565,8 +644,10 @@ class TrainerMLP(RunnerMLP):
         # epoch.
         # This shuffling is done in the dataset themselves.
         do_shuffle = self.parameters.use_shuffling_for_samplers
-        if self.data.parameters.use_lazy_loading or self.parameters_full.\
-                use_horovod:
+        if (
+            self.data.parameters.use_lazy_loading
+            or self.parameters_full.use_horovod
+        ):
             do_shuffle = False
 
         # Prepare data loaders.(look into mini-batch size)
@@ -580,14 +661,22 @@ class TrainerMLP(RunnerMLP):
         elif isinstance(self.data.training_data_sets[0], FastTensorDataset):
             # Not shuffling in loader.
             # I manually shuffle the data set each epoch.
-            self.training_data_loaders.append(DataLoader(self.data.training_data_sets[0],
-                                                         batch_size=None,
-                                                         sampler=self.train_sampler,
-                                                         **kwargs,
-                                                         shuffle=False))
+            self.training_data_loaders.append(
+                DataLoader(
+                    self.data.training_data_sets[0],
+                    batch_size=None,
+                    sampler=self.train_sampler,
+                    **kwargs,
+                    shuffle=False,
+                )
+            )
         else:
-            if isinstance(self.data.training_data_sets[0], LazyLoadDatasetSingle):
-                self.training_data_loaders = MultiLazyLoadDataLoader(self.data.training_data_sets, **kwargs)
+            if isinstance(
+                self.data.training_data_sets[0], LazyLoadDatasetSingle
+            ):
+                self.training_data_loaders = MultiLazyLoadDataLoader(
+                    self.data.training_data_sets, **kwargs
+                )
             else:
                 self.training_data_loaders.append(DataLoader(self.data.training_data_sets[0],
                                                              batch_size=self.parameters.
@@ -608,8 +697,12 @@ class TrainerMLP(RunnerMLP):
                                                            self.validation_sampler,
                                                            **kwargs))
         else:
-            if isinstance(self.data.validation_data_sets[0], LazyLoadDatasetSingle):
-                self.validation_data_loaders = MultiLazyLoadDataLoader(self.data.validation_data_sets, **kwargs)
+            if isinstance(
+                self.data.validation_data_sets[0], LazyLoadDatasetSingle
+            ):
+                self.validation_data_loaders = MultiLazyLoadDataLoader(
+                    self.data.validation_data_sets, **kwargs
+                )
             else:
                 self.validation_data_loaders.append(DataLoader(self.data.validation_data_sets[0],
                                                                batch_size=self.parameters.
@@ -626,33 +719,65 @@ class TrainerMLP(RunnerMLP):
             elif isinstance(self.data.test_data_sets[0], LazyLoadDatasetSingle):
                 self.test_data_loaders = MultiLazyLoadDataLoader(self.data.test_data_sets, **kwargs)
             else:
-                self.test_data_loaders.append(DataLoader(self.data.test_data_sets[0],
-                                                         batch_size=self.parameters.
-                                                         mini_batch_size * 1,
-                                                         sampler=self.test_sampler,
-                                                         **kwargs))
+                self.test_data_loaders.append(
+                    DataLoader(
+                        self.data.test_data_sets[0],
+                        batch_size=self.parameters.mini_batch_size * 1,
+                        sampler=self.test_sampler,
+                        **kwargs,
+                    )
+                )
+
+        if self.parameters_full.use_gpu > 1:
+            if self.parameters_full.network.nn_type != "feed-forward":
+                raise Exception(
+                    "Only feed-forward networks are supported "
+                    "with multiple GPUs."
+                )
+            self.network = torch.nn.DataParallel(
+                self.network,
+                device_ids=list(range(self.parameters_full.use_gpu)),
+            )
 
     def __process_mini_batch(self, network, input_data, target_data):
         """Process a mini batch."""
-        if self.parameters._configuration["gpu"]:
+        if self.parameters._configuration["gpu"] > 0:
             if self.parameters.use_graphs and self.train_graph is None:
                 printout("Capturing CUDA graph for training.", min_verbosity=2)
-                s = torch.cuda.Stream()
-                s.wait_stream(torch.cuda.current_stream())
+                s = torch.cuda.Stream(self.parameters._configuration["device"])
+                s.wait_stream(
+                    torch.cuda.current_stream(
+                        self.parameters._configuration["device"]
+                    )
+                )
                 # Warmup for graphs
                 with torch.cuda.stream(s):
                     for _ in range(20):
                         self.network.zero_grad(set_to_none=True)
 
-                        with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
+                        with torch.cuda.amp.autocast(
+                            enabled=self.parameters.use_mixed_precision
+                        ):
                             prediction = network(input_data)
-                            loss = network.calculate_loss(prediction, target_data)
+                            loss = network.calculate_loss(
+                                prediction, target_data
+                            )
+                            if hasattr(network, "module"):
+                                loss = network.module.calculate_loss(
+                                    prediction, target_data
+                                )
+                            else:
+                                loss = network.calculate_loss(
+                                    prediction, target_data
+                                )
 
                         if self.gradscaler:
                             self.gradscaler.scale(loss).backward()
                         else:
                             loss.backward()
-                torch.cuda.current_stream().wait_stream(s)
+                torch.cuda.current_stream(
+                    self.parameters._configuration["device"]
+                ).wait_stream(s)
 
                 # Create static entry point tensors to graph
                 self.static_input_data = torch.empty_like(input_data)
@@ -662,10 +787,25 @@ class TrainerMLP(RunnerMLP):
                 self.train_graph = torch.cuda.CUDAGraph()
                 self.network.zero_grad(set_to_none=True)
                 with torch.cuda.graph(self.train_graph):
-                    with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                        self.static_prediction = network(self.static_input_data)
+                    with torch.cuda.amp.autocast(
+                        enabled=self.parameters.use_mixed_precision
+                    ):
+                        self.static_prediction = network(
+                            self.static_input_data
+                        )
 
-                        self.static_loss = network.calculate_loss(self.static_prediction, self.static_target_data)
+                        self.static_loss = network.calculate_loss(
+                            self.static_prediction, self.static_target_data
+                        )
+
+                        if hasattr(network, "module"):
+                            self.static_loss = network.module.calculate_loss(
+                                self.static_prediction, self.static_target_data
+                            )
+                        else:
+                            self.static_loss = network.calculate_loss(
+                                self.static_prediction, self.static_target_data
+                            )
 
                     if self.gradscaler:
                         self.gradscaler.scale(self.static_loss).backward()
@@ -682,17 +822,27 @@ class TrainerMLP(RunnerMLP):
                 # zero_grad
                 torch.cuda.nvtx.range_pop()
 
-                with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
+                with torch.cuda.amp.autocast(
+                    enabled=self.parameters.use_mixed_precision
+                ):
                     torch.cuda.nvtx.range_push("forward")
+                    t = time.time()
                     prediction = network(input_data)
+                    dt = time.time() - t
+                    printout(f"forward time: {dt}")
                     # forward
                     torch.cuda.nvtx.range_pop()
 
                     torch.cuda.nvtx.range_push("loss")
-                    if hasattr(network, "calculate_loss"):
-                        loss = network.calculate_loss(prediction, target_data)
+                    t = time.time()
+                    if hasattr(network, "module"):
+                        loss = network.module.calculate_loss(
+                            prediction, target_data
+                        )
                     else:
-                        loss = network.module.calculate_loss(prediction, target_data)
+                        loss = network.calculate_loss(prediction, target_data)
+                    dt = time.time() - t
+                    printout(f"loss time: {dt}")
                     # loss
                     torch.cuda.nvtx.range_pop()
 
@@ -701,13 +851,16 @@ class TrainerMLP(RunnerMLP):
                 else:
                     loss.backward()
 
+            t = time.time()
             torch.cuda.nvtx.range_push("optimizer")
             if self.gradscaler:
                 self.gradscaler.step(self.optimizer)
                 self.gradscaler.update()
             else:
                 self.optimizer.step()
-            torch.cuda.nvtx.range_pop() # optimizer
+            dt = time.time() - t
+            printout(f"optimizer time: {dt}")
+            torch.cuda.nvtx.range_pop()  # optimizer
 
             if self.train_graph:
                 return self.static_loss
@@ -715,7 +868,10 @@ class TrainerMLP(RunnerMLP):
                 return loss
         else:
             prediction = network(input_data)
-            loss = network.calculate_loss(prediction, target_data)
+            if hasattr(network, "module"):
+                loss = network.module.calculate_loss(prediction, target_data)
+            else:
+                loss = network.calculate_loss(prediction, target_data)
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
@@ -1793,8 +1949,10 @@ class TrainerGNN(RunnerGraph):
             data_loaders = self.test_data_loaders
             data_sets = self.data.test_data_sets
             number_of_snapshots = self.data.nr_test_snapshots
-            offset_snapshots = self.data.nr_validation_snapshots + \
-                               self.data.nr_training_snapshots
+            offset_snapshots = (
+                self.data.nr_validation_snapshots
+                + self.data.nr_training_snapshots
+            )
 
         elif data_set_type == "validation":
             data_loaders = self.validation_data_loaders
@@ -1803,15 +1961,16 @@ class TrainerGNN(RunnerGraph):
             offset_snapshots = self.data.nr_training_snapshots
 
         else:
-            raise Exception("Please select test or validation"
-                            "when using this function.")
+            raise Exception(
+                "Please select test or validation when using this function."
+            )
         network.eval()
         if validation_type == "ldos":
             # validation_loss_sum = torch.zeros(1, device=self.parameters.
                                             #   _configuration["device"])
             validation_loss_sum = 0
             with torch.no_grad():
-                if self.parameters._configuration["gpu"]:
+                if self.parameters._configuration["gpu"] > 0:
                     report_freq = self.parameters.training_log_interval
                     torch.cuda.synchronize()
                     tsample = time.time()
@@ -1838,10 +1997,24 @@ class TrainerGNN(RunnerGraph):
                                 embeddings[graph_ions_hash] = embedding_extended
                             embedding_extended = embeddings[graph_ions_hash]
 
-                            if self.parameters.use_graphs and self.validation_graph is None:
-                                printout("Capturing CUDA graph for validation.", min_verbosity=2)
-                                s = torch.cuda.Stream()
-                                s.wait_stream(torch.cuda.current_stream())
+                            if (
+                                self.parameters.use_graphs
+                                and self.validation_graph is None
+                            ):
+                                printout(
+                                    "Capturing CUDA graph for validation.",
+                                    min_verbosity=2,
+                                )
+                                s = torch.cuda.Stream(
+                                    self.parameters._configuration["device"]
+                                )
+                                s.wait_stream(
+                                    torch.cuda.current_stream(
+                                        self.parameters._configuration[
+                                            "device"
+                                        ]
+                                    )
+                                )
                                 # Warmup for graphs
                                 with torch.cuda.stream(s):
                                     for _ in range(20):
@@ -1928,50 +2101,49 @@ class TrainerGNN(RunnerGraph):
                                 tsample = time.time()
                             graph_grid.to('cpu', non_blocking=True)
                             batchid += 1
-                    torch.cuda.synchronize()
-                else: # CPU
-                    raise Exception("CPU validation not supported")
+                    torch.cuda.synchronize(
+                        self.parameters._configuration["device"]
+                    )
+                else:
                     batchid = 0
                     for loader in data_loaders:
-                        embeddings = {}
+                        for x, y in loader:
+                            x = x.to(self.parameters._configuration["device"])
+                            y = y.to(self.parameters._configuration["device"])
+                            prediction = network(x)
 
-                        printout(f"Validating {validation_type} on {data_set_type} data set.")
-                        for graph_ions, graph_grid in tqdm(
-                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
-                            total=len(loader)
-                        ):
-                            graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
+                            if hasattr(network, "module"):
+                                loss = network.module.calculate_loss(
+                                    prediction, y
+                                )
+                            else:
+                                loss = network.calculate_loss(prediction, y)
 
-                            graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
-                            if graph_ions_hash not in embeddings:
-                                torch.cuda.nvtx.range_push("embedding calcuation")
-                                embedding_extended = self._compute_embedding(graph_ions, graph_grid)
-                                torch.cuda.nvtx.range_pop()
-                                embeddings[graph_ions_hash] = embedding_extended
-                            embedding_extended = embeddings[graph_ions_hash]
-
-                            prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
-                            validation_loss_sum += \
-                                network.calculate_loss(prediction, graph_ions, graph_grid).detach().cpu().item()
-                            graph_grid.to('cpu', non_blocking=True)
+                            validation_loss_sum += loss.item()
                             batchid += 1
 
             validation_loss = validation_loss_sum / batchid
             return validation_loss
-        elif validation_type == "band_energy" or \
-                validation_type == "total_energy":
+        elif (
+            validation_type == "band_energy"
+            or validation_type == "total_energy"
+        ):
             errors = []
-            if isinstance(self.validation_data_loaders, MultiLazyLoadDataLoader):
+            if isinstance(
+                self.validation_data_loaders, MultiLazyLoadDataLoader
+            ):
                 loader_id = 0
                 for loader in data_loaders:
-                    grid_size = self.data.parameters. \
-                        snapshot_directories_list[loader_id +
-                                                  offset_snapshots].grid_size
+                    grid_size = self.data.parameters.snapshot_directories_list[
+                        loader_id + offset_snapshots
+                    ].grid_size
 
                     actual_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension))
+                        (grid_size, self.data.output_dimension)
+                    )
                     predicted_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension))
+                        (grid_size, self.data.output_dimension)
+                    )
                     last_start = 0
 
                     embeddings = {}
@@ -2010,11 +2182,13 @@ class TrainerGNN(RunnerGraph):
                     loader_id += 1
 
             else:
-                for snapshot_number in range(offset_snapshots,
-                                             number_of_snapshots+offset_snapshots):
+                for snapshot_number in range(
+                    offset_snapshots, number_of_snapshots + offset_snapshots
+                ):
                     # Get optimal batch size and number of batches per snapshotss
-                    grid_size = self.data.parameters.\
-                        snapshot_directories_list[snapshot_number].grid_size
+                    grid_size = self.data.parameters.snapshot_directories_list[
+                        snapshot_number
+                    ].grid_size
 
                     # optimal_batch_size = self._correct_batch_size_for_testing(
                     #     grid_size, self.parameters.mini_batch_size
@@ -2039,25 +2213,30 @@ class TrainerGNN(RunnerGraph):
         else:
             raise Exception("Selected validation method not supported.")
 
-    def _calculate_energy_errors(self, actual_outputs, predicted_outputs,
-                                 energy_type, snapshot_number):
-        self.data.target_calculator.\
-            read_additional_calculation_data(self.data.
-                                             get_snapshot_calculation_output(snapshot_number))
+    def _calculate_energy_errors(
+        self, actual_outputs, predicted_outputs, energy_type, snapshot_number
+    ):
+        self.data.target_calculator.read_additional_calculation_data(
+            self.data.get_snapshot_calculation_output(snapshot_number)
+        )
         if energy_type == "band_energy":
             try:
-                fe_actual = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(actual_outputs)
-                be_actual = self.data.target_calculator. \
-                    get_band_energy(actual_outputs, fermi_energy=fe_actual)
+                fe_actual = self.data.target_calculator.get_self_consistent_fermi_energy(
+                    actual_outputs
+                )
+                be_actual = self.data.target_calculator.get_band_energy(
+                    actual_outputs, fermi_energy=fe_actual
+                )
 
-                fe_predicted = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(predicted_outputs)
-                be_predicted = self.data.target_calculator. \
-                    get_band_energy(predicted_outputs,
-                                    fermi_energy=fe_predicted)
-                return np.abs(be_predicted - be_actual) * \
-                       (1000 / len(self.data.target_calculator.atoms))
+                fe_predicted = self.data.target_calculator.get_self_consistent_fermi_energy(
+                    predicted_outputs
+                )
+                be_predicted = self.data.target_calculator.get_band_energy(
+                    predicted_outputs, fermi_energy=fe_predicted
+                )
+                return np.abs(be_predicted - be_actual) * (
+                    1000 / len(self.data.target_calculator.atoms)
+                )
             except ValueError:
                 # If the training went badly, it might be that the above
                 # code results in an error, due to the LDOS being so wrong
@@ -2066,19 +2245,22 @@ class TrainerGNN(RunnerGraph):
                 return float("inf")
         elif energy_type == "total_energy":
             try:
-                fe_actual = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(actual_outputs)
-                be_actual = self.data.target_calculator. \
-                    get_total_energy(ldos_data=actual_outputs,
-                                     fermi_energy=fe_actual)
+                fe_actual = self.data.target_calculator.get_self_consistent_fermi_energy(
+                    actual_outputs
+                )
+                be_actual = self.data.target_calculator.get_total_energy(
+                    ldos_data=actual_outputs, fermi_energy=fe_actual
+                )
 
-                fe_predicted = self.data.target_calculator. \
-                    get_self_consistent_fermi_energy(predicted_outputs)
-                be_predicted = self.data.target_calculator. \
-                    get_total_energy(ldos_data=predicted_outputs,
-                                    fermi_energy=fe_predicted)
-                return np.abs(be_predicted - be_actual) * \
-                       (1000 / len(self.data.target_calculator.atoms))
+                fe_predicted = self.data.target_calculator.get_self_consistent_fermi_energy(
+                    predicted_outputs
+                )
+                be_predicted = self.data.target_calculator.get_total_energy(
+                    ldos_data=predicted_outputs, fermi_energy=fe_predicted
+                )
+                return np.abs(be_predicted - be_actual) * (
+                    1000 / len(self.data.target_calculator.atoms)
+                )
             except ValueError:
                 # If the training went badly, it might be that the above
                 # code results in an error, due to the LDOS being so wrong

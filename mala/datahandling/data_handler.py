@@ -1,4 +1,5 @@
 """DataHandler class that loads and scales data."""
+
 import os
 from abc import ABC
 
@@ -309,15 +310,17 @@ class DataHandlerMLP(DataHandler):
         # Data will be scaled per user specification.            
         self.input_data_scaler = input_data_scaler
         if self.input_data_scaler is None:
-            self.input_data_scaler \
-                = DataScaler(self.parameters.input_rescaling_type,
-                             use_horovod=self.use_horovod)
+            self.input_data_scaler = DataScaler(
+                self.parameters.input_rescaling_type,
+                use_horovod=self.use_horovod,
+            )
 
         self.output_data_scaler = output_data_scaler
         if self.output_data_scaler is None:
-            self.output_data_scaler \
-                = DataScaler(self.parameters.output_rescaling_type,
-                             use_horovod=self.use_horovod)
+            self.output_data_scaler = DataScaler(
+                self.parameters.output_rescaling_type,
+                use_horovod=self.use_horovod,
+            )
 
         # Actual data points in the different categories.
         self.nr_training_data = 0
@@ -399,8 +402,10 @@ class DataHandlerMLP(DataHandler):
         # Do a consistency check of the snapshots so that we don't run into
         # an error later. If there is an error, check_snapshots() will raise
         # an exception.
-        printout("Checking the snapshots and your inputs for consistency.",
-                 min_verbosity=1)
+        printout(
+            "Checking the snapshots and your inputs for consistency.",
+            min_verbosity=1,
+        )
         self._check_snapshots()
         printout("Consistency check successful.", min_verbosity=0)
 
@@ -421,10 +426,14 @@ class DataHandlerMLP(DataHandler):
             printout("Initializing the data scalers.", min_verbosity=1)
             self._parametrize_scalers()
             printout("Data scalers initialized.", min_verbosity=0)
-        elif self.parameters.use_lazy_loading is False and \
-                self.nr_training_data != 0:
-            printout("Data scalers already initilized, loading data to RAM.",
-                     min_verbosity=0)
+        elif (
+            self.parameters.use_lazy_loading is False
+            and self.nr_training_data != 0
+        ):
+            printout(
+                "Data scalers already initilized, loading data to RAM.",
+                min_verbosity=0,
+            )
             self.__load_data("training", "inputs")
             self.__load_data("training", "outputs")
 
@@ -491,17 +500,21 @@ class DataHandlerMLP(DataHandler):
         """
         # get the snapshot from the snapshot number
         snapshot = self.parameters.snapshot_directories_list[snapshot_number]
-        
+
         if self.parameters.use_lazy_loading:
             # This fails if an incorrect snapshot was loaded.
             if self.test_data_sets[0].currently_loaded_file != snapshot_number:
-                raise Exception("Cannot calculate gradients, wrong file "
-                                "was lazily loaded.")
+                raise Exception(
+                    "Cannot calculate gradients, wrong file "
+                    "was lazily loaded."
+                )
             return self.test_data_sets[0].input_data.grad
         else:
-            return self.test_data_inputs.\
-                       grad[snapshot.grid_size*snapshot_number:
-                            snapshot.grid_size*(snapshot_number+1)]
+            return self.test_data_inputs.grad[
+                snapshot.grid_size
+                * snapshot_number : snapshot.grid_size
+                * (snapshot_number + 1)
+            ]
 
     def get_snapshot_calculation_output(self, snapshot_number):
         """
@@ -518,14 +531,16 @@ class DataHandlerMLP(DataHandler):
             Path to the calculation output for this snapshot.
 
         """
-        return self.parameters.snapshot_directories_list[snapshot_number].\
-            calculation_output
+        return self.parameters.snapshot_directories_list[
+            snapshot_number
+        ].calculation_output
 
     # Debugging
     ######################
-        
-    def raw_numpy_to_converted_scaled_tensor(self, numpy_array, data_type,
-                                             units, convert3Dto1D=False):
+
+    def raw_numpy_to_converted_scaled_tensor(
+        self, numpy_array, data_type, units, convert3Dto1D=False
+    ):
         """
         Transform a raw numpy array into a scaled torch tensor.
 
@@ -552,12 +567,14 @@ class DataHandlerMLP(DataHandler):
         """
         # Check parameters for consistency.
         if data_type != "in" and data_type != "out":
-            raise Exception("Please specify either \"in\" or \"out\" as "
-                            "data_type.")
+            raise Exception(
+                'Please specify either "in" or "out" as ' "data_type."
+            )
 
         # Convert units of numpy array.
-        numpy_array = self.__raw_numpy_to_converted_numpy(numpy_array,
-                                                          data_type, units)
+        numpy_array = self.__raw_numpy_to_converted_numpy(
+            numpy_array, data_type, units
+        )
 
         # If desired, the dimensions can be changed.
         if convert3Dto1D:
@@ -571,16 +588,17 @@ class DataHandlerMLP(DataHandler):
             desired_dimensions = None
 
         # Convert numpy array to scaled tensor a network can work with.
-        numpy_array = self.\
-            __converted_numpy_to_scaled_tensor(numpy_array, desired_dimensions,
-                                               data_type)
+        numpy_array = self.__converted_numpy_to_scaled_tensor(
+            numpy_array, desired_dimensions, data_type
+        )
         return numpy_array
 
-    def resize_snapshots_for_debugging(self, directory="./",
-                                       naming_scheme_input=
-                                       "test_Al_debug_2k_nr*.in",
-                                       naming_scheme_output=
-                                       "test_Al_debug_2k_nr*.out"):
+    def resize_snapshots_for_debugging(
+        self,
+        directory="./",
+        naming_scheme_input="test_Al_debug_2k_nr*.in",
+        naming_scheme_output="test_Al_debug_2k_nr*.out",
+    ):
         """
         Resize all snapshots in the list.
 
@@ -599,18 +617,22 @@ class DataHandlerMLP(DataHandler):
         i = 0
         snapshot: Snapshot
         for snapshot in self.parameters.snapshot_directories_list:
-            tmp_array = self.descriptor_calculator.\
-                read_from_numpy_file(os.path.join(snapshot.input_npy_directory,
-                                                  snapshot.input_npy_file),
-                                     units=snapshot.input_units)
+            tmp_array = self.descriptor_calculator.read_from_numpy_file(
+                os.path.join(
+                    snapshot.input_npy_directory, snapshot.input_npy_file
+                ),
+                units=snapshot.input_units,
+            )
             tmp_file_name = naming_scheme_input
             tmp_file_name = tmp_file_name.replace("*", str(i))
             np.save(os.path.join(directory, tmp_file_name) + ".npy", tmp_array)
 
-            tmp_array = self.target_calculator.\
-                read_from_numpy_file(os.path.join(snapshot.output_npy_directory,
-                                                  snapshot.output_npy_file),
-                                     units=snapshot.output_units)
+            tmp_array = self.target_calculator.read_from_numpy_file(
+                os.path.join(
+                    snapshot.output_npy_directory, snapshot.output_npy_file
+                ),
+                units=snapshot.output_units,
+            )
             tmp_file_name = naming_scheme_output
             tmp_file_name = tmp_file_name.replace("*", str(i))
             np.save(os.path.join(directory, tmp_file_name + ".npy"), tmp_array)
@@ -644,17 +666,22 @@ class DataHandlerMLP(DataHandler):
                     self.nr_validation_snapshots += 1
                     self.nr_validation_data += snapshot.grid_size
                 else:
-                    raise Exception("Unknown option for snapshot splitting "
-                                    "selected.")
+                    raise Exception(
+                        "Unknown option for snapshot splitting selected."
+                    )
 
             # Now we need to check whether or not this input is believable.
             nr_of_snapshots = len(self.parameters.snapshot_directories_list)
-            if nr_of_snapshots != (self.nr_training_snapshots +
-                                   self.nr_test_snapshots +
-                                   self.nr_validation_snapshots):
-                raise Exception("Cannot split snapshots with specified "
-                                "splitting scheme, "
-                                "too few or too many options selected")
+            if nr_of_snapshots != (
+                self.nr_training_snapshots
+                + self.nr_test_snapshots
+                + self.nr_validation_snapshots
+            ):
+                raise Exception(
+                    "Cannot split snapshots with specified "
+                    "splitting scheme, "
+                    "too few or too many options selected"
+                )
             # MALA can either be run in training or test-only mode.
             # But it has to be run in either of those!
             # So either training AND validation snapshots can be provided
@@ -679,35 +706,41 @@ class DataHandlerMLP(DataHandler):
             self.__allocate_arrays()
 
         # Reordering the lists.
-        snapshot_order = {'tr': 0, 'va': 1, 'te': 2}
-        self.parameters.snapshot_directories_list.sort(key=lambda d:
-                                                       snapshot_order
-                                                       [d.snapshot_function])
+        snapshot_order = {"tr": 0, "va": 1, "te": 2}
+        self.parameters.snapshot_directories_list.sort(
+            key=lambda d: snapshot_order[d.snapshot_function]
+        )
 
     def __allocate_arrays(self):
         if self.nr_training_data > 0:
-            self.training_data_inputs = np.zeros((self.nr_training_data,
-                                                  self.input_dimension),
-                                                 dtype=DEFAULT_NP_DATA_DTYPE)
-            self.training_data_outputs = np.zeros((self.nr_training_data,
-                                                   self.output_dimension),
-                                                  dtype=DEFAULT_NP_DATA_DTYPE)
+            self.training_data_inputs = np.zeros(
+                (self.nr_training_data, self.input_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
+            self.training_data_outputs = np.zeros(
+                (self.nr_training_data, self.output_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
 
         if self.nr_validation_data > 0:
-            self.validation_data_inputs = np.zeros((self.nr_validation_data,
-                                                    self.input_dimension),
-                                                   dtype=DEFAULT_NP_DATA_DTYPE)
-            self.validation_data_outputs = np.zeros((self.nr_validation_data,
-                                                     self.output_dimension),
-                                                    dtype=DEFAULT_NP_DATA_DTYPE)
+            self.validation_data_inputs = np.zeros(
+                (self.nr_validation_data, self.input_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
+            self.validation_data_outputs = np.zeros(
+                (self.nr_validation_data, self.output_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
 
         if self.nr_test_data > 0:
-            self.test_data_inputs = np.zeros((self.nr_test_data,
-                                              self.input_dimension),
-                                             dtype=DEFAULT_NP_DATA_DTYPE)
-            self.test_data_outputs = np.zeros((self.nr_test_data,
-                                               self.output_dimension),
-                                              dtype=DEFAULT_NP_DATA_DTYPE)
+            self.test_data_inputs = np.zeros(
+                (self.nr_test_data, self.input_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
+            self.test_data_outputs = np.zeros(
+                (self.nr_test_data, self.output_dimension),
+                dtype=DEFAULT_NP_DATA_DTYPE,
+            )
 
     def __load_data(self, function, data_type):
         """
@@ -722,21 +755,27 @@ class DataHandlerMLP(DataHandler):
         data_type : string
             Can be "input" or "output".
         """
-        if function != "training" and function != "test" and \
-                function != "validation":
+        if (
+            function != "training"
+            and function != "test"
+            and function != "validation"
+        ):
             raise Exception("Unknown snapshot type detected.")
         if data_type != "outputs" and data_type != "inputs":
             raise Exception("Unknown data type detected.")
 
         # Extracting all the information pertaining to the data set.
-        array = function+"_data_"+data_type
+        array = function + "_data_" + data_type
         if data_type == "inputs":
             calculator = self.descriptor_calculator
         else:
             calculator = self.target_calculator
 
-        feature_dimension = self.input_dimension if data_type == "inputs" \
+        feature_dimension = (
+            self.input_dimension
+            if data_type == "inputs"
             else self.output_dimension
+        )
 
         snapshot_counter = 0
         gs_old = 0
@@ -747,25 +786,32 @@ class DataHandlerMLP(DataHandler):
             # Data scaling is only performed on the training data sets.
             if snapshot.snapshot_function == function[0:2]:
                 if data_type == "inputs":
-                    file = os.path.join(snapshot.input_npy_directory,
-                                        snapshot.input_npy_file)
+                    file = os.path.join(
+                        snapshot.input_npy_directory, snapshot.input_npy_file
+                    )
                     units = snapshot.input_units
                 else:
-                    file = os.path.join(snapshot.output_npy_directory,
-                                        snapshot.output_npy_file)
+                    file = os.path.join(
+                        snapshot.output_npy_directory,
+                        snapshot.output_npy_file,
+                    )
                     units = snapshot.output_units
 
                 if snapshot.snapshot_type == "numpy":
                     calculator.read_from_numpy_file(
                         file,
                         units=units,
-                        array=getattr(self, array)[gs_old : gs_old + gs_new, :],
+                        array=getattr(self, array)[
+                            gs_old : gs_old + gs_new, :
+                        ],
                         reshape=True,
                     )
                 elif snapshot.snapshot_type == "openpmd":
-                    getattr(self, array)[gs_old : gs_old + gs_new] = \
-                        calculator.read_from_openpmd_file(file, units=units) \
-                        .reshape([gs_new, feature_dimension])
+                    getattr(self, array)[gs_old : gs_old + gs_new] = (
+                        calculator.read_from_openpmd_file(
+                            file, units=units
+                        ).reshape([gs_new, feature_dimension])
+                    )
                 else:
                     raise Exception("Unknown snapshot file type.")
                 snapshot_counter += 1
@@ -781,127 +827,151 @@ class DataHandlerMLP(DataHandler):
         # all ears.
         if data_type == "inputs":
             if function == "training":
-                self.training_data_inputs = torch.\
-                    from_numpy(self.training_data_inputs).float()
+                self.training_data_inputs = torch.from_numpy(
+                    self.training_data_inputs
+                ).float()
 
             if function == "validation":
-                self.validation_data_inputs = torch.\
-                    from_numpy(self.validation_data_inputs).float()
+                self.validation_data_inputs = torch.from_numpy(
+                    self.validation_data_inputs
+                ).float()
 
             if function == "test":
-                self.test_data_inputs = torch.\
-                    from_numpy(self.test_data_inputs).float()
+                self.test_data_inputs = torch.from_numpy(
+                    self.test_data_inputs
+                ).float()
 
         if data_type == "outputs":
             if function == "training":
-                self.training_data_outputs = torch.\
-                    from_numpy(self.training_data_outputs).float()
+                self.training_data_outputs = torch.from_numpy(
+                    self.training_data_outputs
+                ).float()
 
             if function == "validation":
-                self.validation_data_outputs = torch.\
-                    from_numpy(self.validation_data_outputs).float()
+                self.validation_data_outputs = torch.from_numpy(
+                    self.validation_data_outputs
+                ).float()
 
             if function == "test":
-                self.test_data_outputs = torch.\
-                    from_numpy(self.test_data_outputs).float()
-                
+                self.test_data_outputs = torch.from_numpy(
+                    self.test_data_outputs
+                ).float()
+
     def __build_datasets(self):
         """Build the DataSets that are used during training."""
-        if self.parameters.use_lazy_loading and not self.parameters.use_lazy_loading_prefetch:
+        if (
+            self.parameters.use_lazy_loading
+            and not self.parameters.use_lazy_loading_prefetch
+        ):
 
             # Create the lazy loading data sets.
-            if self.parameters.use_clustering:
-                self.training_data_sets.append(LazyLoadDatasetClustered(
-                    self.input_dimension, self.output_dimension,
-                    self.input_data_scaler, self.output_data_scaler,
-                    self.descriptor_calculator, self.target_calculator,
-                    self.grid_dimension, self.grid_size,
-                    self.use_horovod, self.parameters.number_of_clusters,
-                    self.parameters.train_ratio,
-                    self.parameters.sample_ratio))
-                self.validation_data_sets.append(LazyLoadDataset(
-                    self.input_dimension, self.output_dimension,
-                    self.input_data_scaler, self.output_data_scaler,
-                    self.descriptor_calculator, self.target_calculator,
-                    self.use_horovod))
+            self.training_data_sets.append(
+                LazyLoadDataset(
+                    self.input_dimension,
+                    self.output_dimension,
+                    self.input_data_scaler,
+                    self.output_data_scaler,
+                    self.descriptor_calculator,
+                    self.target_calculator,
+                    self.use_horovod,
+                )
+            )
+            self.validation_data_sets.append(
+                LazyLoadDataset(
+                    self.input_dimension,
+                    self.output_dimension,
+                    self.input_data_scaler,
+                    self.output_data_scaler,
+                    self.descriptor_calculator,
+                    self.target_calculator,
+                    self.use_horovod,
+                )
+            )
 
-                if self.nr_test_data != 0:
-                    self.test_data_sets.append(LazyLoadDataset(
+            if self.nr_test_data != 0:
+                self.test_data_sets.append(
+                    LazyLoadDataset(
                         self.input_dimension,
                         self.output_dimension,
-                        self.input_data_scaler, self.output_data_scaler,
-                        self.descriptor_calculator, self.target_calculator,
+                        self.input_data_scaler,
+                        self.output_data_scaler,
+                        self.descriptor_calculator,
+                        self.target_calculator,
                         self.use_horovod,
-                        input_requires_grad=True))
-
-            else:
-                self.training_data_sets.append(LazyLoadDataset(
-                    self.input_dimension, self.output_dimension,
-                    self.input_data_scaler, self.output_data_scaler,
-                    self.descriptor_calculator, self.target_calculator,
-                    self.use_horovod))
-                self.validation_data_sets.append(LazyLoadDataset(
-                    self.input_dimension, self.output_dimension,
-                    self.input_data_scaler, self.output_data_scaler,
-                    self.descriptor_calculator, self.target_calculator,
-                    self.use_horovod))
-
-                if self.nr_test_data != 0:
-                    self.test_data_sets.append(LazyLoadDataset(
-                        self.input_dimension,
-                        self.output_dimension,
-                        self.input_data_scaler, self.output_data_scaler,
-                        self.descriptor_calculator, self.target_calculator,
-                        self.use_horovod,
-                        input_requires_grad=True))
+                        input_requires_grad=True,
+                    )
+                )
 
             # Add snapshots to the lazy loading data sets.
             for snapshot in self.parameters.snapshot_directories_list:
                 if snapshot.snapshot_function == "tr":
-                    self.training_data_sets[0].add_snapshot_to_dataset(snapshot)
+                    self.training_data_sets[0].add_snapshot_to_dataset(
+                        snapshot
+                    )
                 if snapshot.snapshot_function == "va":
-                    self.validation_data_sets[0].add_snapshot_to_dataset(snapshot)
+                    self.validation_data_sets[0].add_snapshot_to_dataset(
+                        snapshot
+                    )
                 if snapshot.snapshot_function == "te":
                     self.test_data_sets[0].add_snapshot_to_dataset(snapshot)
 
-            if self.parameters.use_clustering:
-                self.training_data_sets[0].cluster_dataset()
             # I don't think we need to mix them here. We can use the standard
             # ordering for the first epoch
             # and mix it up after.
             # self.training_data_set.mix_datasets()
             # self.validation_data_set.mix_datasets()
             # self.test_data_set.mix_datasets()
-        elif self.parameters.use_lazy_loading and self.parameters.use_lazy_loading_prefetch:
+        elif (
+            self.parameters.use_lazy_loading
+            and self.parameters.use_lazy_loading_prefetch
+        ):
             printout("Using lazy loading pre-fetching.", min_verbosity=2)
-            # Create the lazy loading data sets.
-            if self.parameters.use_clustering:
-                raise Exception("clustering not supported in this mode")
-            else:
-                # Create LazyLoadDatasetSingle instances per snapshot and add to list
-                for snapshot in self.parameters.snapshot_directories_list:
-                    if snapshot.snapshot_function == "tr":
-                        self.training_data_sets.append(LazyLoadDatasetSingle(
-                            self.mini_batch_size, snapshot,
-                            self.input_dimension, self.output_dimension,
-                            self.input_data_scaler, self.output_data_scaler,
-                            self.descriptor_calculator, self.target_calculator,
-                            self.use_horovod))
-                    if snapshot.snapshot_function == "va":
-                        self.validation_data_sets.append(LazyLoadDatasetSingle(
-                            self.mini_batch_size, snapshot,
-                            self.input_dimension, self.output_dimension,
-                            self.input_data_scaler, self.output_data_scaler,
-                            self.descriptor_calculator, self.target_calculator,
-                            self.use_horovod))
-                    if snapshot.snapshot_function == "te":
-                        self.test_data_sets.append(LazyLoadDatasetSingle(
-                            self.mini_batch_size, snapshot,
-                            self.input_dimension, self.output_dimension,
-                            self.input_data_scaler, self.output_data_scaler,
-                            self.descriptor_calculator, self.target_calculator,
+            # Create LazyLoadDatasetSingle instances per snapshot and add to
+            # list.
+            for snapshot in self.parameters.snapshot_directories_list:
+                if snapshot.snapshot_function == "tr":
+                    self.training_data_sets.append(
+                        LazyLoadDatasetSingle(
+                            self.mini_batch_size,
+                            snapshot,
+                            self.input_dimension,
+                            self.output_dimension,
+                            self.input_data_scaler,
+                            self.output_data_scaler,
+                            self.descriptor_calculator,
+                            self.target_calculator,
                             self.use_horovod,
-                            input_requires_grad=True))
+                        )
+                    )
+                if snapshot.snapshot_function == "va":
+                    self.validation_data_sets.append(
+                        LazyLoadDatasetSingle(
+                            self.mini_batch_size,
+                            snapshot,
+                            self.input_dimension,
+                            self.output_dimension,
+                            self.input_data_scaler,
+                            self.output_data_scaler,
+                            self.descriptor_calculator,
+                            self.target_calculator,
+                            self.use_horovod,
+                        )
+                    )
+                if snapshot.snapshot_function == "te":
+                    self.test_data_sets.append(
+                        LazyLoadDatasetSingle(
+                            self.mini_batch_size,
+                            snapshot,
+                            self.input_dimension,
+                            self.output_dimension,
+                            self.input_data_scaler,
+                            self.output_data_scaler,
+                            self.descriptor_calculator,
+                            self.target_calculator,
+                            self.use_horovod,
+                            input_requires_grad=True,
+                        )
+                    )
 
         else:
             if self.nr_training_data != 0:
@@ -909,14 +979,20 @@ class DataHandlerMLP(DataHandler):
                 self.output_data_scaler.transform(self.training_data_outputs)
                 if self.parameters.use_fast_tensor_data_set:
                     printout("Using FastTensorDataset.", min_verbosity=2)
-                    self.training_data_sets.append( \
-                        FastTensorDataset(self.mini_batch_size,
-                                          self.training_data_inputs,
-                                          self.training_data_outputs))
+                    self.training_data_sets.append(
+                        FastTensorDataset(
+                            self.mini_batch_size,
+                            self.training_data_inputs,
+                            self.training_data_outputs,
+                        )
+                    )
                 else:
-                    self.training_data_sets.append( \
-                        TensorDataset(self.training_data_inputs,
-                                      self.training_data_outputs))
+                    self.training_data_sets.append(
+                        TensorDataset(
+                            self.training_data_inputs,
+                            self.training_data_outputs,
+                        )
+                    )
 
             if self.nr_validation_data != 0:
                 self.__load_data("validation", "inputs")
@@ -926,14 +1002,20 @@ class DataHandlerMLP(DataHandler):
                 self.output_data_scaler.transform(self.validation_data_outputs)
                 if self.parameters.use_fast_tensor_data_set:
                     printout("Using FastTensorDataset.", min_verbosity=2)
-                    self.validation_data_sets.append( \
-                        FastTensorDataset(self.mini_batch_size,
-                                          self.validation_data_inputs,
-                                          self.validation_data_outputs))
+                    self.validation_data_sets.append(
+                        FastTensorDataset(
+                            self.mini_batch_size,
+                            self.validation_data_inputs,
+                            self.validation_data_outputs,
+                        )
+                    )
                 else:
-                    self.validation_data_sets.append( \
-                        TensorDataset(self.validation_data_inputs,
-                                      self.validation_data_outputs))
+                    self.validation_data_sets.append(
+                        TensorDataset(
+                            self.validation_data_inputs,
+                            self.validation_data_outputs,
+                        )
+                    )
 
             if self.nr_test_data != 0:
                 self.__load_data("test", "inputs")
@@ -942,9 +1024,11 @@ class DataHandlerMLP(DataHandler):
 
                 self.__load_data("test", "outputs")
                 self.output_data_scaler.transform(self.test_data_outputs)
-                self.test_data_sets.append( \
-                    TensorDataset(self.test_data_inputs,
-                                  self.test_data_outputs))
+                self.test_data_sets.append(
+                    TensorDataset(
+                        self.test_data_inputs, self.test_data_outputs
+                    )
+                )
 
     # Scaling
     ######################
@@ -969,14 +1053,22 @@ class DataHandlerMLP(DataHandler):
                 # Data scaling is only performed on the training data sets.
                 if snapshot.snapshot_function == "tr":
                     if snapshot.snapshot_type == "numpy":
-                        tmp = self.descriptor_calculator. \
-                            read_from_numpy_file(os.path.join(snapshot.input_npy_directory,
-                                                              snapshot.input_npy_file),
-                                                 units=snapshot.input_units)
+                        tmp = self.descriptor_calculator.read_from_numpy_file(
+                            os.path.join(
+                                snapshot.input_npy_directory,
+                                snapshot.input_npy_file,
+                            ),
+                            units=snapshot.input_units,
+                        )
                     elif snapshot.snapshot_type == "openpmd":
-                        tmp = self.descriptor_calculator. \
-                            read_from_openpmd_file(os.path.join(snapshot.input_npy_directory,
-                                                                snapshot.input_npy_file))
+                        tmp = (
+                            self.descriptor_calculator.read_from_openpmd_file(
+                                os.path.join(
+                                    snapshot.input_npy_directory,
+                                    snapshot.input_npy_file,
+                                )
+                            )
+                        )
                     else:
                         raise Exception("Unknown snapshot file type.")
 
@@ -988,8 +1080,9 @@ class DataHandlerMLP(DataHandler):
                     tmp = np.array(tmp)
                     if tmp.dtype != DEFAULT_NP_DATA_DTYPE:
                         tmp = tmp.astype(DEFAULT_NP_DATA_DTYPE)
-                    tmp = tmp.reshape([snapshot.grid_size,
-                                       self.input_dimension])
+                    tmp = tmp.reshape(
+                        [snapshot.grid_size, self.input_dimension]
+                    )
                     tmp = torch.from_numpy(tmp).float()
                     self.input_data_scaler.incremental_fit(tmp)
 
@@ -1021,14 +1114,20 @@ class DataHandlerMLP(DataHandler):
                 # Data scaling is only performed on the training data sets.
                 if snapshot.snapshot_function == "tr":
                     if snapshot.snapshot_type == "numpy":
-                        tmp = self.target_calculator.\
-                            read_from_numpy_file(os.path.join(snapshot.output_npy_directory,
-                                                              snapshot.output_npy_file),
-                                                 units=snapshot.output_units)
+                        tmp = self.target_calculator.read_from_numpy_file(
+                            os.path.join(
+                                snapshot.output_npy_directory,
+                                snapshot.output_npy_file,
+                            ),
+                            units=snapshot.output_units,
+                        )
                     elif snapshot.snapshot_type == "openpmd":
-                        tmp = self.target_calculator. \
-                            read_from_openpmd_file(os.path.join(snapshot.output_npy_directory,
-                                                                snapshot.output_npy_file))
+                        tmp = self.target_calculator.read_from_openpmd_file(
+                            os.path.join(
+                                snapshot.output_npy_directory,
+                                snapshot.output_npy_file,
+                            )
+                        )
                     else:
                         raise Exception("Unknown snapshot file type.")
 
@@ -1040,8 +1139,9 @@ class DataHandlerMLP(DataHandler):
                     tmp = np.array(tmp)
                     if tmp.dtype != DEFAULT_NP_DATA_DTYPE:
                         tmp = tmp.astype(DEFAULT_NP_DATA_DTYPE)
-                    tmp = tmp.reshape([snapshot.grid_size,
-                                       self.output_dimension])
+                    tmp = tmp.reshape(
+                        [snapshot.grid_size, self.output_dimension]
+                    )
                     tmp = torch.from_numpy(tmp).float()
                     self.output_data_scaler.incremental_fit(tmp)
                 i += 1
@@ -1051,30 +1151,35 @@ class DataHandlerMLP(DataHandler):
             self.__load_data("training", "outputs")
             self.output_data_scaler.fit(self.training_data_outputs)
 
-        printout("Output scaler parametrized.", min_verbosity=1)                
+        printout("Output scaler parametrized.", min_verbosity=1)
 
-    def __raw_numpy_to_converted_numpy(self, numpy_array, data_type="in",
-                                       units=None):
+    def __raw_numpy_to_converted_numpy(
+        self, numpy_array, data_type="in", units=None
+    ):
         """Convert a raw numpy array containing into the correct units."""
         if data_type == "in":
-            if data_type == "in" and self.descriptor_calculator.\
-                    descriptors_contain_xyz:
+            if (
+                data_type == "in"
+                and self.descriptor_calculator.descriptors_contain_xyz
+            ):
                 numpy_array = numpy_array[:, :, :, 3:]
             if units is not None:
-                numpy_array *= self.descriptor_calculator.convert_units(1,
-                                                                        units)
+                numpy_array *= self.descriptor_calculator.convert_units(
+                    1, units
+                )
             return numpy_array
         elif data_type == "out":
             if units is not None:
                 numpy_array *= self.target_calculator.convert_units(1, units)
             return numpy_array
         else:
-            raise Exception("Please choose either \"in\" or \"out\" for "
-                            "this function.")
+            raise Exception(
+                'Please choose either "in" or "out" for ' "this function."
+            )
 
-    def __converted_numpy_to_scaled_tensor(self, numpy_array,
-                                           desired_dimensions=None,
-                                           data_type="in"):
+    def __converted_numpy_to_scaled_tensor(
+        self, numpy_array, desired_dimensions=None, data_type="in"
+    ):
         """
         Transform a numpy array containing into a scaled torch tensor.
 
@@ -1090,8 +1195,9 @@ class DataHandlerMLP(DataHandler):
         elif data_type == "out":
             self.output_data_scaler.transform(numpy_array)
         else:
-            raise Exception("Please choose either \"in\" or \"out\" for "
-                            "this function.")
+            raise Exception(
+                'Please choose either "in" or "out" for ' "this function."
+            )
         return numpy_array
 
 
