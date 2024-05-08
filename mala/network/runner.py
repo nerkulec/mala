@@ -87,7 +87,7 @@ class RunnerMLP:
         params_file = run_name + ".params.json"
         if save_runner:
             optimizer_file = run_name + ".optimizer.pth"
-
+        os.makedirs(save_path, exist_ok=True)
         self.parameters_full.save(os.path.join(save_path, params_file))
         if hasattr(self.network, "module"):
             self.network.module.save_network(
@@ -122,14 +122,14 @@ class RunnerMLP:
                         )
 
                 files.append(additional_calculation_file)
+            zipfile_name = os.path.join(save_path, run_name + ".zip")
             with ZipFile(
-                os.path.join(save_path, run_name + ".zip"),
-                "w",
-                compression=ZIP_STORED,
+                zipfile_name, "w", compression=ZIP_STORED,
             ) as zip_obj:
                 for file in files:
-                    zip_obj.write(os.path.join(save_path, file), file)
-                    os.remove(os.path.join(save_path, file))
+                    file_path = os.path.join(save_path, file)
+                    zip_obj.write(file_path, file)
+                    os.remove(file_path)
 
     @classmethod
     def load_run(

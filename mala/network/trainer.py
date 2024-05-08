@@ -81,11 +81,10 @@ class TrainerMLP(RunnerMLP):
 
         self.__prepare_to_train(optimizer_dict)
 
-        self.tensor_board = None
+        self.logger = None
         self.full_logging_path = None
-        if self.parameters.logging:
-            if not os.path.exists(self.parameters.logging_dir):
-                os.makedirs(self.parameters.logging_dir)
+        if self.parameters.logger is not None:
+            os.makedirs(self.parameters.logging_dir, exist_ok=True)
             if self.parameters.logging_dir_append_date:
                 date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
                 if len(self.parameters.run_name) > 0:
@@ -100,7 +99,13 @@ class TrainerMLP(RunnerMLP):
                     self.parameters.logging_dir
 
             # Set the path to log files
-            self.tensor_board = SummaryWriter(self.full_logging_path)
+            if self.parameters.logger == "wandb":
+                import wandb
+                self.logger = wandb
+            elif self.parameters.logger == "tensorboard":
+                self.logger = SummaryWriter(self.full_logging_path)
+            else:
+                raise Exception(f"Unsupported logger {self.parameters.logger}.")
             printout("Writing logging output to",
                      self.full_logging_path, min_verbosity=1)
 
@@ -309,7 +314,7 @@ class TrainerMLP(RunnerMLP):
                         total=len(loader)
                     ):
                         dt = time.time() - t
-                        printout(f"load time: {dt}")
+                        printout(f"load time: {dt}", min_verbosity=3)
 
                         if self.parameters.profiler_range is not None:
                             if batchid == self.parameters.profiler_range[0]:
@@ -330,7 +335,7 @@ class TrainerMLP(RunnerMLP):
                             non_blocking=True,
                         )
                         dt = time.time() - t
-                        printout(f"data copy in time: {dt}")
+                        printout(f"data copy in time: {dt}", min_verbosity=3)
                         # data copy in
                         torch.cuda.nvtx.range_pop()
 
@@ -356,12 +361,19 @@ class TrainerMLP(RunnerMLP):
                             tsample = time.time()
 
                             # summary_writer tensor board
-                            if self.parameters.logging:
+                            if self.parameters.logger == "tensorboard":
                                 training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
-                                self.tensor_board.add_scalars(
+                                self.logger.add_scalars(
                                     'ldos', {'during_training': training_loss_mean}, total_batch_id
                                 )
-                                self.tensor_board.close()
+                                self.logger.close()
+                                training_loss_sum_logging = 0.0
+                            if self.parameters.logger == "wandb":
+                                training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
+                                self.logger.log(
+                                    {'ldos_during_training': training_loss_mean},
+                                    step=total_batch_id
+                                )
                                 training_loss_sum_logging = 0.0
 
                         batchid += 1
@@ -409,22 +421,22 @@ class TrainerMLP(RunnerMLP):
                     min_verbosity=1
                 )
 
-            # summary_writer tensor board
-            if self.parameters.logging:
+            if self.parameters.logger == "tensorboard":
                 for dataset_fraction in dataset_fractions:
                     for metric in errors[dataset_fraction]:
-                        self.tensor_board.add_scalars(
+                        self.logger.add_scalars(
                             metric, {
                                 dataset_fraction: errors[dataset_fraction][metric]
                             }, total_batch_id
                         )
-                # if self.parameters.logging == 2:
-                #     for name, param in self.network.named_parameters():
-                #         self.tensor_board.add_histogram(name, param, epoch)
-                #         self.tensor_board.add_histogram(
-                #             f'{name}.grad', param.grad, epoch
-                #         )
-                self.tensor_board.close()
+                self.logger.close()
+            if self.parameters.logger == "wandb":
+                for dataset_fraction in dataset_fractions:
+                    for metric in errors[dataset_fraction]:
+                        self.logger.log(
+                            {f"{dataset_fraction}_{metric}": errors[dataset_fraction][metric]},
+                            step=total_batch_id
+                        )
 
             if self.parameters._configuration["gpu"] > 0:
                 torch.cuda.synchronize(
@@ -530,20 +542,20 @@ class TrainerMLP(RunnerMLP):
             self.optimizer = optim.SGD(
                 self.network.parameters(),
                 lr=self.parameters.learning_rate,
-                weight_decay=self.parameters.weight_decay,
+                weight_decay=self.parameters.l2_regularization,
             )
         elif self.parameters.optimizer == "Adam":
             self.optimizer = optim.Adam(
                 self.network.parameters(),
                 lr=self.parameters.learning_rate,
-                weight_decay=self.parameters.weight_decay,
+                weight_decay=self.parameters.l2_regularization,
             )
         elif self.parameters.optimizer == "FusedAdam":
             if version.parse(torch.__version__) >= version.parse("1.13.0"):
                 self.optimizer = optim.Adam(
                     self.network.parameters(),
                     lr=self.parameters.learning_rate,
-                    weight_decay=self.parameters.weight_decay,
+                    weight_decay=self.parameters.l2_regularization,
                     fused=True,
                 )
             else:
@@ -829,7 +841,7 @@ class TrainerMLP(RunnerMLP):
                     t = time.time()
                     prediction = network(input_data)
                     dt = time.time() - t
-                    printout(f"forward time: {dt}")
+                    printout(f"forward time: {dt}", min_verbosity=3)
                     # forward
                     torch.cuda.nvtx.range_pop()
 
@@ -842,7 +854,7 @@ class TrainerMLP(RunnerMLP):
                     else:
                         loss = network.calculate_loss(prediction, target_data)
                     dt = time.time() - t
-                    printout(f"loss time: {dt}")
+                    printout(f"loss time: {dt}", min_verbosity=3)
                     # loss
                     torch.cuda.nvtx.range_pop()
 
@@ -859,7 +871,7 @@ class TrainerMLP(RunnerMLP):
             else:
                 self.optimizer.step()
             dt = time.time() - t
-            printout(f"optimizer time: {dt}")
+            printout(f"optimizer time: {dt}", min_verbosity=3)
             torch.cuda.nvtx.range_pop()  # optimizer
 
             if self.train_graph:
@@ -933,11 +945,12 @@ class TrainerMLP(RunnerMLP):
                         errors[data_set_type]["ldos"].append(error)
                     
                     energy_metrics = [metric for metric in metrics if "energy" in metric]
-                    energy_errors = self._calculate_energy_errors(
-                        actual_outputs, predicted_outputs, energy_metrics, snapshot_number
-                    )
-                    for metric in energy_metrics:
-                        errors[data_set_type][metric].append(energy_errors[metric])
+                    if len(energy_metrics) > 0:
+                        energy_errors = self._calculate_energy_errors(
+                            actual_outputs, predicted_outputs, energy_metrics, snapshot_number
+                        )
+                        for metric in energy_metrics:
+                            errors[data_set_type][metric].append(energy_errors[metric])
         return errors
 
     def _calculate_energy_errors(
@@ -1032,7 +1045,10 @@ class TrainerMLP(RunnerMLP):
         torch.save(save_dict, optimizer_name,
                    _use_new_zipfile_serialization=False)
 
-        self.save_run(self.parameters.checkpoint_name, save_runner=True)
+        self.save_run(
+            self.parameters.checkpoint_name, save_runner=True,
+            save_path=self.parameters.run_name
+        )
 
     @staticmethod
     def __average_validation(val, name):
@@ -1085,7 +1101,7 @@ class TrainerGNN(RunnerGraph):
 
         self.__prepare_to_train(optimizer_dict)
 
-        self.tensor_board = None
+        self.logger = None
         self.full_logging_path = None
         if self.parameters.logging:
             if not os.path.exists(self.parameters.logging_dir):
@@ -1104,7 +1120,11 @@ class TrainerGNN(RunnerGraph):
                     self.parameters.logging_dir
 
             # Set the path to log files
-            self.tensor_board = SummaryWriter(self.full_logging_path)
+            if self.parameters.logger == "tensorboard":
+                self.logger = SummaryWriter(self.full_logging_path)
+            elif self.parameters.logger == "wandb":
+                import wandb
+                self.logger = wandb
             printout("Writing logging output to",
                      self.full_logging_path, min_verbosity=1)
 
@@ -1272,11 +1292,18 @@ class TrainerGNN(RunnerGraph):
         self.initial_test_loss = tloss
 
 
-        if self.parameters.logging:
-            self.tensor_board.add_scalars(
-                'Loss', {'validation': vloss}, 0
+        if self.parameters.logger == "tensorboard":
+            self.logger.add_scalars(
+                'Loss', {
+                    f'validation_{self.parameters.during_training_metric}': vloss
+                }, 0
             )
-            self.tensor_board.close()
+        if self.parameters.logger == "wandb":
+            self.logger.log(
+                {f"validation_{self.parameters.during_training_metric}": vloss},
+                step=0
+            )
+        self.logger.close()
         return vloss
 
 
@@ -1406,14 +1433,18 @@ class TrainerGNN(RunnerGraph):
                         
 
                             # summary_writer tensor board
-                            if self.parameters.logging:
+                            if self.parameters.logger == "tensorboard":
                                 training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
-                                self.tensor_board.add_scalars(
+                                self.logger.add_scalars(
                                     'Loss', {'training': training_loss_mean}, total_batch_id
                                 )
-                                self.tensor_board.close()
+                                self.logger.close()
                                 training_loss_sum_logging = 0.0
-
+                            if self.parameters.logger == "wandb":
+                                self.logger.log(
+                                    {"training": training_loss_mean},
+                                    step=total_batch_id
+                                )
                         batchid += 1
                         total_batch_id += 1
                 torch.cuda.synchronize()
@@ -1471,20 +1502,18 @@ class TrainerGNN(RunnerGraph):
                 )
 
             # summary_writer tensor board
-            if self.parameters.logging:
-                self.tensor_board.add_scalars(
+            if self.parameters.logger == "tensorboard":
+                self.logger.add_scalars(
                     'Loss', {
                         f'validation_{self.parameters.during_training_metric}': vloss
                     }, total_batch_id
                 )
-                # Not working for now
-                # if self.parameters.logging >= 2:
-                #     for name, param in self.network.named_parameters():
-                #         self.tensor_board.add_histogram(name, param, epoch)
-                #         self.tensor_board.add_histogram(
-                #             f'{name}.grad', param.grad, epoch
-                #         )
-                self.tensor_board.close()
+                self.logger.close()
+            if self.parameters.logger == "wandb":
+                self.logger.log(
+                    {f"validation_{self.parameters.during_training_metric}": vloss},
+                    step=total_batch_id
+                )
 
             if self.parameters._configuration["gpu"]:
                 torch.cuda.synchronize()
@@ -1616,12 +1645,12 @@ class TrainerGNN(RunnerGraph):
             self.encoder_optimizer = optim.Adam(
                 self.network.encoder.parameters(),
                 lr=self.parameters.learning_rate_embedding,
-                weight_decay=self.parameters.weight_decay
+                weight_decay=self.parameters.l2_regularization
             )
             self.decoder_optimizer = optim.Adam(
                 self.network.decoder.parameters(),
                 lr=self.parameters.learning_rate,
-                weight_decay=self.parameters.weight_decay
+                weight_decay=self.parameters.l2_regularization
             )
         elif self.parameters.optimizer == "FusedAdam":
             raise Exception("FusedAdam is not supported.")

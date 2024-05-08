@@ -197,7 +197,7 @@ class DataHandler(ABC):
             ####################
 
             printout("Checking descriptor file ", snapshot.input_npy_file,
-                     "at", snapshot.input_npy_directory, min_verbosity=1)
+                     "at", snapshot.input_npy_directory, min_verbosity=3)
             if snapshot.snapshot_type == "numpy":
                 tmp_dimension = self.descriptor_calculator. \
                     read_dimensions_from_numpy_file(
@@ -231,7 +231,7 @@ class DataHandler(ABC):
             ####################
 
             printout("Checking targets file ", snapshot.output_npy_file, "at",
-                     snapshot.output_npy_directory, min_verbosity=1)
+                     snapshot.output_npy_directory, min_verbosity=3)
             if snapshot.snapshot_type == "numpy":
                 tmp_dimension = self.target_calculator. \
                     read_dimensions_from_numpy_file(

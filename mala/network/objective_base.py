@@ -232,8 +232,11 @@ class ObjectiveBase:
                         turned_off_layers.append(layer_counter)
                     layer_counter += 1
 
-            elif par.name == "weight_decay":
-                self.params.running.weight_decay = par.get_parameter(trial)
+            elif par.name == "l1_regularization":
+                self.params.running.l1_regularization = par.get_parameter(trial)
+
+            elif par.name == "l2_regularization":
+                self.params.running.l2_regularization = par.get_parameter(trial)
 
             elif "optimizer" == par.name:
                 self.params.running.optimizer = par.get_parameter(trial)
@@ -310,7 +313,8 @@ class ObjectiveBase:
 
         self.params.running.run_name = f"\
 {network_type}_test_optuna_\
-wd{self.params.running.weight_decay:.1e}_\
+l1{self.params.running.l1_regularization:.1e}_\
+l2{self.params.running.l2_regularization:.1e}_\
 lr{self.params.running.learning_rate:.1e}_\
 mb{self.params.running.mini_batch_size}_\
 lrd{self.params.running.learning_rate_decay}_\

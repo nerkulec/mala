@@ -175,7 +175,7 @@ class DataHandlerBase(ABC):
                 snapshot.input_npy_file,
                 "at",
                 snapshot.input_npy_directory,
-                min_verbosity=1,
+                min_verbosity=3,
             )
             if snapshot.snapshot_type == "numpy":
                 tmp_dimension = (
@@ -219,7 +219,7 @@ class DataHandlerBase(ABC):
                 snapshot.output_npy_file,
                 "at",
                 snapshot.output_npy_directory,
-                min_verbosity=1,
+                min_verbosity=3,
             )
             if snapshot.snapshot_type == "numpy":
                 tmp_dimension = (

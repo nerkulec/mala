@@ -271,11 +271,6 @@ class ParametersNetwork(ParametersBase):
         Number of hidden layers to be used in lstm or gru or transformer nets
         Default: None
 
-    dropout: float
-        Dropout rate for transformer net
-        0.0 ≤ dropout ≤ 1.0
-        Default: 0.0
-
     num_heads: int
         Number of heads to be used in Multi head attention network
         This should be a divisor of input dimension
@@ -296,8 +291,7 @@ class ParametersNetwork(ParametersBase):
         self.no_hidden_state = False
         self.bidirection = False
 
-        # for transformer net
-        self.dropout = 0.1
+        # for se(3)-transformer
         self.num_heads = 4
         self.channels_div = 2
         self.max_degree = 2
@@ -661,10 +655,6 @@ class ParametersRunning(ParametersBase):
     mini_batch_size : int
         Size of the mini batch for the optimization algorihm. Default: 10.
 
-    weight_decay : float
-        Weight decay for regularization. Always refers to L2 regularization.
-        Default: 0.
-
     early_stopping_epochs : int
         Number of epochs the validation accuracy is allowed to not improve by
         at leastearly_stopping_threshold, before we terminate. If 0, no
@@ -721,12 +711,6 @@ class ParametersRunning(ParametersBase):
         Name used for the checkpoints. Using this, multiple runs
         can be performed in the same directory.
 
-    logging : int
-        If True then Tensorboard is activated for logging
-        case 0: No tensorboard activated
-        case 1: tensorboard activated with Loss and learning rate
-        case 2; additonally weights and biases and gradient
-
     logging_dir : string
         Name of the folder that logging files will be saved to.
 
@@ -763,7 +747,13 @@ class ParametersRunning(ParametersBase):
         self.ldos_grid_batch_size = 1000
         self.snapshots_per_epoch = -1
         self.embedding_reuse_steps = 10
-        self.weight_decay = 0
+        
+        self.l1_regularization = 0.0
+        self.l2_regularization = 0.0
+        self.dropout = 0.0
+        self.batch_norm = False
+        self.input_noise = 0.0
+        
         self.early_stopping_epochs = 0
         self.early_stopping_threshold = 0
         self.learning_rate_scheduler = None
@@ -777,9 +767,9 @@ class ParametersRunning(ParametersBase):
         self.checkpoint_best_so_far = False
         self.checkpoint_name = "checkpoint_mala"
         self.run_name = ''
-        self.logging = 0
         self.logging_dir = "./mala_logging"
         self.logging_dir_append_date = True
+        self.logger = "tensorboard"
         self.validation_metrics = ["ldos"]
         self.validate_on_training_data = False
         self.inference_data_grid = [0, 0, 0]

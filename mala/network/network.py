@@ -92,6 +92,7 @@ class Network(nn.Module):
         self.use_horovod = params.use_horovod
         self.mini_batch_size = params.running.mini_batch_size
         self.params = params.network
+        self.parameters_full = params
 
         # if the user has planted a seed (for comparibility purposes) we
         # should use it.
@@ -166,7 +167,12 @@ class Network(nn.Module):
             Loss value for output and target.
 
         """
-        return self.loss_func(output, target)
+        loss = self.loss_func(output, target)
+        if self.parameters_full.running.l1_regularization > 0:
+            loss += self.parameters_full.running.l1_regularization * sum(
+                [torch.sum(torch.abs(param)) for param in self.parameters()]
+            )
+        return loss
 
     # FIXME: This guarentees downwards compatibility, but it is ugly.
     #  Rather enforce the right package versions in the repo.
@@ -262,6 +268,10 @@ class FeedForwardNet(Network):
                     )
                 )
             )
+            if self.parameters_full.running.dropout > 0 and i != self.number_of_layers - 1:
+                self.layers.append(nn.Dropout(self.parameters_full.running.dropout))
+            if self.parameters_full.running.batch_norm and i != self.number_of_layers - 1:
+                self.layers.append(nn.BatchNorm1d(self.params.layer_sizes[i + 1]))
             try:
                 if use_only_one_activation_type:
                     self.layers.append(
@@ -297,6 +307,13 @@ class FeedForwardNet(Network):
             Predicted outputs of array.
         """
         # Forward propagate data.
+        if self.parameters_full.running.input_noise > 0 and self.training:
+            inputs = inputs + torch.normal(
+                mean=0.0,
+                std=self.parameters_full.running.input_noise,
+                size=inputs.size(),
+                device=inputs.device,
+            )
         for layer in self.layers:
             inputs = layer(inputs)
         return inputs
