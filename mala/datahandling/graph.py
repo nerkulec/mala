@@ -215,7 +215,7 @@ def load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions):
 
 def get_ldos_graph_loader(
   atoms_path, ldos_path, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=None, corner=False,
-  max_degree=1, randomize_ldos_grid_positions=False, seed=None
+  max_degree=1, randomize_ldos_grid_positions=False, n_samples=None, seed=None
 ):
   atoms = read(atoms_path)
   atoms.__class__ = HashableAtoms
@@ -239,7 +239,8 @@ def get_ldos_graph_loader(
     rs = np.random.RandomState(hash(seed)%(2**32))
     rs.shuffle(random_permutation)
   # print(f"get_ldos_graph_loader {seed=}, {random_permutation[:20]=}")
-    
+  if n_samples is not None and n_samples < len(cartesian_ldos_positions):
+    random_permutation = random_permutation[:n_samples]
   cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
   
   def get_ldos_graph(batch_number):
@@ -256,9 +257,7 @@ def get_ldos_graph_loader(
     ldos_graph = dgl.graph((src, dst), num_nodes=n_ions+ldos_batch_size)
     ldos_graph.edata['rel_pos'] = rel_pos
     # --
-    ldos_batch = torch.tensor(
-      ldos[batch_number*ldos_batch_size:(batch_number+1)*ldos_batch_size], dtype=torch.float32
-    )
+    ldos_batch = ldos[batch_number*ldos_batch_size:(batch_number+1)*ldos_batch_size]
     ldos_graph.ndata['target'] = torch.cat(
       [torch.zeros((n_atoms, ldos_shape[-1]), dtype=torch.float32), ldos_batch], dim=0
     )

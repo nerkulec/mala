@@ -75,6 +75,7 @@ class OnTheFlyGraphDataset(Dataset):
     self, n_closest_ions=8, n_closest_ldos=32, ldos_batch_size=1000,
     max_degree=1, ldos_paths=[], input_paths=[], n_batches=None, n_prefetch=100,
     grid_points_in_corners=False, on_the_fly_shuffling=True, ldos_grid_random_subset=True,
+    snapshot_frac=1.0
   ):
     super().__init__()
     self.n_snapshots = len(ldos_paths)
@@ -91,6 +92,7 @@ class OnTheFlyGraphDataset(Dataset):
     self.grid_points_in_corners = grid_points_in_corners
     self.on_the_fly_shuffling = on_the_fly_shuffling
     self.ldos_grid_random_subset = ldos_grid_random_subset
+    self.snapshot_frac = snapshot_frac
     
     self.pool_executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix="GraphPrefetcher")
     
@@ -127,16 +129,17 @@ class OnTheFlyGraphDataset(Dataset):
       ldos = load_ldos(ldos_path)
       ldos_shape = ldos.shape
       ldos_size = np.prod(ldos_shape[:-1])
-      self.n_ldos_batches = ldos_size//self.ldos_batch_size
       self.grid_size = ldos_size
       self.grid_sizes.append(ldos_size)
       self.ldos_dim = ldos_shape[-1]
       ldos = ldos.reshape((-1, ldos_shape[-1]))
+      self.n_samples = int(len(ldos)*self.snapshot_frac)
       ldos_graph_loader = get_ldos_graph_loader(
         input_path, ldos_path, self.ldos_batch_size, self.n_closest_ldos, ldos_shape,
         corner=self.grid_points_in_corners, randomize_ldos_grid_positions=self.ldos_grid_random_subset,
-        seed=input_path, max_degree=self.max_degree
+        seed=input_path, max_degree=self.max_degree, n_samples=self.n_samples
       )
+      self.n_ldos_batches = self.n_samples//self.ldos_batch_size
       self.graph_loaders[snapshot_index] = ldos_graph_loader
     self.ldos_graphs_cache = {}
     self.next_cache_index_to_clean = 0
@@ -229,7 +232,7 @@ class OnTheFlyGraphDataset(Dataset):
     if i == len(self.batch_tuples)-1:
       self.batch_tuples = self.next_batch_tuples
       self.next_batch_tuples = self.get_batch_tuples()
-      printout(f"Cache misses: {self.cache_misses}/{len(self.batch_tuples)}")
+      printout(f"Cache misses: {self.cache_misses}/{len(self.batch_tuples)}", min_verbosity=1)
       self.cache_misses = 0
     
     return ion_graph, ldos_graph

@@ -871,70 +871,6 @@ class TrainerMLP(RunnerMLP):
             self.optimizer.zero_grad()
             return loss
 
-    def __validate_network(self, data_set_fractions, metrics):
-        # """Validate a network, using train, test or validation data."""
-        self.network.eval()
-        errors = {}
-        for data_set_type in data_set_fractions:
-            if data_set_type == "train":
-                data_loaders = self.training_data_loaders
-                data_sets = self.data.training_data_sets
-                number_of_snapshots = self.data.nr_training_snapshots
-                offset_snapshots = 0
-
-            elif data_set_type == "validation":
-                data_loaders = self.validation_data_loaders
-                data_sets = self.data.validation_data_sets
-                number_of_snapshots = self.data.nr_validation_snapshots
-                offset_snapshots = self.data.nr_training_snapshots
-                
-            elif data_set_type == "test":
-                data_loaders = self.test_data_loaders
-                data_sets = self.data.test_data_sets
-                number_of_snapshots = self.data.nr_test_snapshots
-                offset_snapshots = self.data.nr_validation_snapshots + \
-                    self.data.nr_training_snapshots
-            else:
-                raise Exception(f"Dataset type ({data_set_type}) not recognized.")
-            
-            errors[data_set_type] = {}
-            for metric in metrics:
-                errors[data_set_type][metric] = []
-                
-            if isinstance(data_loaders[0], MultiLazyLoadDataLoader):
-                raise Exception("MultiLazyLoadDataLoader not supported.")
-            
-            with torch.no_grad():
-                for snapshot_number in trange(
-                    offset_snapshots, number_of_snapshots+offset_snapshots,
-                    desc="Validation"
-                ):
-                    # Get optimal batch size and number of batches per snapshotss
-                    grid_size = self.data.parameters.snapshot_directories_list[snapshot_number].grid_size
-
-                    optimal_batch_size = self._correct_batch_size_for_testing(
-                        grid_size, self.parameters.mini_batch_size
-                    )
-                    number_of_batches_per_snapshot = int(grid_size / optimal_batch_size)
-
-                    actual_outputs, predicted_outputs = self._forward_entire_snapshot(
-                        snapshot_number, data_sets[0], data_set_type[0:2],
-                        number_of_batches_per_snapshot, optimal_batch_size
-                    )
-                    
-                    if "ldos" in metrics:
-                        error = ((actual_outputs-predicted_outputs)**2).mean()
-                        errors[data_set_type]["ldos"].append(error)
-                    
-                    energy_metrics = [metric for metric in metrics if "energy" in metric]
-                    if len(energy_metrics) > 0:
-                        energy_errors = self._calculate_energy_errors(
-                            actual_outputs, predicted_outputs, energy_metrics, snapshot_number
-                        )
-                        for metric in energy_metrics:
-                            errors[data_set_type][metric].append(energy_errors[metric])
-        return errors
-
     def _calculate_energy_errors(
         self, actual_outputs, predicted_outputs, energy_types, snapshot_number
     ):
@@ -1085,7 +1021,7 @@ class TrainerGNN(RunnerGraph):
 
         self.logger = None
         self.full_logging_path = None
-        if self.parameters.logging:
+        if self.parameters.logger is not None:
             if not os.path.exists(self.parameters.logging_dir):
                 os.makedirs(self.parameters.logging_dir)
             if self.parameters.logging_dir_append_date:
@@ -1412,21 +1348,20 @@ class TrainerGNN(RunnerGraph):
                                      f"train avg throughput: {avg_sample_tput}",
                                      min_verbosity=3)
                             tsample = time.time()
-                        
 
                             # summary_writer tensor board
+                            training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
                             if self.parameters.logger == "tensorboard":
-                                training_loss_mean = training_loss_sum_logging / self.parameters.training_log_interval
                                 self.logger.add_scalars(
                                     'Loss', {'training': training_loss_mean}, total_batch_id
                                 )
                                 self.logger.close()
-                                training_loss_sum_logging = 0.0
                             if self.parameters.logger == "wandb":
                                 self.logger.log(
                                     {"training": training_loss_mean},
                                     step=total_batch_id
                                 )
+                            training_loss_sum_logging = 0.0
                         batchid += 1
                         total_batch_id += 1
                 torch.cuda.synchronize()

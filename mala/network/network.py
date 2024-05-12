@@ -404,6 +404,7 @@ class SE3Decoder(nn.Module):
         if params is not None:
             # super(SE3Decoder, self).__init__(params)
             self.params = params.network
+            self.parameters_full = params
             self.loss_func = functional.mse_loss
 
             self.hidden_size = params.network.layer_sizes[1]

@@ -1607,6 +1607,7 @@ class DataHandlerGraph(DataHandler):
                     grid_points_in_corners=self.params.data.grid_points_in_corners,
                     on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
                     ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
+                    snapshot_frac=self.params.data.snapshot_frac,
                 ))
             else:
                 self.training_data_sets.append(GraphDataset(
