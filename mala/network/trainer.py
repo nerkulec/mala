@@ -663,14 +663,7 @@ class TrainerMLP(RunnerMLP):
             do_shuffle = False
 
         # Prepare data loaders.(look into mini-batch size)
-        if isinstance(self.data.training_data_sets[0], GraphDataset):
-            self.training_data_loaders.append(GraphDataLoader(self.data.training_data_sets[0],
-                                                              batch_size=self.parameters.
-                                                              mini_batch_size,
-                                                              sampler=self.train_sampler,
-                                                              **kwargs,
-                                                              shuffle=do_shuffle))            
-        elif isinstance(self.data.training_data_sets[0], FastTensorDataset):
+        if isinstance(self.data.training_data_sets[0], FastTensorDataset):
             # Not shuffling in loader.
             # I manually shuffle the data set each epoch.
             self.training_data_loaders.append(
@@ -696,13 +689,7 @@ class TrainerMLP(RunnerMLP):
                                                              sampler=self.train_sampler,
                                                              **kwargs,
                                                              shuffle=do_shuffle))
-        if isinstance(self.data.validation_data_sets[0], GraphDataset):
-            self.validation_data_loaders.append(GraphDataLoader(self.data.validation_data_sets[0],
-                                                                batch_size=None,
-                                                                sampler=
-                                                                self.validation_sampler,
-                                                                **kwargs))
-        elif isinstance(self.data.validation_data_sets[0], FastTensorDataset):
+        if isinstance(self.data.validation_data_sets[0], FastTensorDataset):
             self.validation_data_loaders.append(DataLoader(self.data.validation_data_sets[0],
                                                            batch_size=None,
                                                            sampler=
@@ -723,12 +710,7 @@ class TrainerMLP(RunnerMLP):
                                                                self.validation_sampler,
                                                                **kwargs))
         if self.data.test_data_sets:
-            if isinstance(self.data.test_data_sets[0], GraphDataset):
-                self.test_data_loaders.append(GraphDataLoader(self.data.test_data_sets[0],
-                                                              batch_size=None,
-                                                              sampler=self.test_sampler,
-                                                              **kwargs))
-            elif isinstance(self.data.test_data_sets[0], LazyLoadDatasetSingle):
+            if isinstance(self.data.test_data_sets[0], LazyLoadDatasetSingle):
                 self.test_data_loaders = MultiLazyLoadDataLoader(self.data.test_data_sets, **kwargs)
             else:
                 self.test_data_loaders.append(
@@ -1483,37 +1465,43 @@ class TrainerGNN(RunnerGraph):
                     self.encoder_optimizer.zero_grad()
                 training_loss = training_loss_sum / batchid
 
-            vloss = self.__validate_network(
-                self.network, "validation", self.parameters.during_training_metric
+            dataset_fractions = ["validation"]
+            if self.parameters.validate_on_training_data:
+                dataset_fractions.append("train")
+            errors = self.__validate_network(
+                dataset_fractions,
+                self.parameters.validation_metrics
             )
-
-            if self.parameters_full.use_horovod:
-                vloss = self.__average_validation(vloss, 'average_loss')
+            for dataset_fraction in dataset_fractions:
+                for metric in errors[dataset_fraction]:
+                    errors[dataset_fraction][metric] = np.mean(
+                        errors[dataset_fraction][metric]
+                    )
+            vloss = errors["validation"][self.parameters.during_training_metric]
             if self.parameters_full.verbosity > 1:
-                printout(
-                    f"Epoch {epoch}: validation data loss: {vloss}, "
-                    f"training data loss: {training_loss}",
-                    min_verbosity=2
-                )
+                printout("Errors:", errors, min_verbosity=2)
             else:
                 printout(
-                    f"Epoch {epoch}: validation data loss: {vloss}",
+                    f"Epoch {epoch}: validation data loss: {vloss:.3e}",
                     min_verbosity=1
                 )
 
-            # summary_writer tensor board
             if self.parameters.logger == "tensorboard":
-                self.logger.add_scalars(
-                    'Loss', {
-                        f'validation_{self.parameters.during_training_metric}': vloss
-                    }, total_batch_id
-                )
+                for dataset_fraction in dataset_fractions:
+                    for metric in errors[dataset_fraction]:
+                        self.logger.add_scalars(
+                            metric, {
+                                dataset_fraction: errors[dataset_fraction][metric]
+                            }, total_batch_id
+                        )
                 self.logger.close()
             if self.parameters.logger == "wandb":
-                self.logger.log(
-                    {f"validation_{self.parameters.during_training_metric}": vloss},
-                    step=total_batch_id
-                )
+                for dataset_fraction in dataset_fractions:
+                    for metric in errors[dataset_fraction]:
+                        self.logger.log(
+                            {f"{dataset_fraction}_{metric}": errors[dataset_fraction][metric]},
+                            step=total_batch_id
+                        )
 
             if self.parameters._configuration["gpu"]:
                 torch.cuda.synchronize()
@@ -1544,13 +1532,13 @@ class TrainerGNN(RunnerGraph):
                 else:
                     self.patience_counter += 1
                     printout("Validation accuracy has not improved "
-                             "enough.", min_verbosity=1)
+                             "enough.", min_verbosity=2)
                     if self.patience_counter >= self.parameters.\
                             early_stopping_epochs:
                         printout("Stopping the training, validation "
                                  "accuracy has not improved for",
                                  self.patience_counter,
-                                 "epochs.", min_verbosity=1)
+                                 "epochs.", min_verbosity=2)
                         self.last_epoch = epoch
                         break
             
@@ -1633,15 +1621,7 @@ class TrainerGNN(RunnerGraph):
         # Choose an optimizer to use.
         if self.parameters.optimizer == "SGD":
             raise Exception("SGD is not supported.")
-            # self.optimizer = optim.SGD(self.network.parameters(),
-            #                           lr=self.parameters.learning_rate,
-            #                           weight_decay=self.parameters.
-            #                           weight_decay)
         elif self.parameters.optimizer == "Adam":
-            # self.optimizer = optim.Adam(self.network.parameters(),
-            #                             lr=self.parameters.learning_rate,
-            #                             weight_decay=self.parameters.
-            #                             weight_decay)
             self.encoder_optimizer = optim.Adam(
                 self.network.encoder.parameters(),
                 lr=self.parameters.learning_rate_embedding,
@@ -1654,14 +1634,6 @@ class TrainerGNN(RunnerGraph):
             )
         elif self.parameters.optimizer == "FusedAdam":
             raise Exception("FusedAdam is not supported.")
-            # if version.parse(torch.__version__) >= version.parse("1.13.0"):
-            #     self.optimizer = optim.Adam(self.network.parameters(),
-            #                                lr=self.parameters.learning_rate,
-            #                                weight_decay=self.parameters.
-            #                                weight_decay, fused=True)
-            # else:
-            #     raise Exception("Training method requires "
-            #                     "at least torch 1.13.0.")
         else:
             raise Exception("Unsupported training method.")
 
@@ -1764,22 +1736,9 @@ class TrainerGNN(RunnerGraph):
 
         # Prepare data loaders.(look into mini-batch size)
         if self.parameters_full.data.use_graph_data_set:
-            # self.training_data_loaders.append(GraphDataLoader(
-            #     self.data.training_data_sets[0], batch_size=self.parameters.mini_batch_size,
-            #     sampler=self.train_sampler, **kwargs,
-            #     shuffle=do_shuffle
-            # ))
             self.training_data_loaders.append(
                 self.data.training_data_sets[0]
             )
-            # Loader 30 min epoch
-            # Raw dataset 20 min epoch
-            # ! GraphDataLoader is not advantageous in our case
-            # self.training_data_loaders.append(DataLoader(
-            #     self.data.training_data_sets[0], batch_size=self.parameters.
-            #     mini_batch_size, sampler=self.train_sampler, **kwargs,
-            #     shuffle=do_shuffle
-            # ))
         elif isinstance(self.data.training_data_sets[0], FastTensorDataset):
             # Not shuffling in loader.
             # I manually shuffle the data set each epoch.

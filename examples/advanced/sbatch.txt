@@ -1,0 +1,17 @@
+traina4 train_bb.py --l1_regularization=0.00001
+traina4 train_bb.py --l1_regularization=0.0001
+traina4 train_bb.py --l1_regularization=0.001
+traina4 train_bb.py --l1_regularization=0.01
+traina4 train_bb.py --l2_regularization=0.00001
+traina4 train_bb.py --l2_regularization=0.0001
+traina4 train_bb.py --l2_regularization=0.001
+traina4 train_bb.py --l2_regularization=0.01
+traina4 train_bb.py --input_noise=0.0001
+traina4 train_bb.py --input_noise=0.001
+traina4 train_bb.py --input_noise=0.01
+traina4 train_bb.py --input_noise=0.1
+traina4 train_bb.py --dropout=0.2
+traina4 train_bb.py --dropout=0.5
+traina4 train_bb.py --dropout=0.7
+traina4 train_bb.py --dropout=0.8
+traina4 train_bb.py --batch_norm=True

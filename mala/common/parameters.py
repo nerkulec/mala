@@ -626,6 +626,7 @@ class ParametersData(ParametersBase):
         self.n_closest_ions = 8
         self.n_closest_ldos = 16
         self.grid_points_in_corners = False
+        self.snapshot_frac = 1.0
         self.n_batches = None
         self.on_the_fly_shuffling = True
         self.ldos_grid_random_subset = True
