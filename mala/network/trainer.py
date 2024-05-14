@@ -403,7 +403,7 @@ class TrainerMLP(RunnerMLP):
             dataset_fractions = ["validation"]
             if self.parameters.validate_on_training_data:
                 dataset_fractions.append("train")
-            errors = self.__validate_network(
+            errors = self._validate_network(
                 dataset_fractions,
                 self.parameters.validation_metrics
             )
@@ -871,7 +871,7 @@ class TrainerMLP(RunnerMLP):
             self.optimizer.zero_grad()
             return loss
 
-    def _calculate_energy_errors(
+    def __calculate_energy_errors(
         self, actual_outputs, predicted_outputs, energy_types, snapshot_number
     ):
         self.data.target_calculator.read_additional_calculation_data(
@@ -1180,16 +1180,10 @@ class TrainerGNN(RunnerGraph):
         ############################
 
         tloss = float("inf")
-        vloss = self.__validate_network(
+        vloss = self._validate_network(
             self.network, "validation",
             self.parameters.after_before_training_metric
         )
-
-        if self.data.test_data_sets:
-            tloss = self.__validate_network(
-                self.network, "test",
-                self.parameters.after_before_training_metric
-            )
 
         # Collect and average all the losses from all the devices
         if self.parameters_full.use_horovod:
@@ -1368,8 +1362,6 @@ class TrainerGNN(RunnerGraph):
                 t1 = time.time()
                 printout(f"training time: {t1 - t0}", min_verbosity=2)
 
-                training_loss = training_loss_sum / batchid
-
                 # Calculate the validation loss. and output it.
                 torch.cuda.synchronize()
             else:
@@ -1403,7 +1395,7 @@ class TrainerGNN(RunnerGraph):
             dataset_fractions = ["validation"]
             if self.parameters.validate_on_training_data:
                 dataset_fractions.append("train")
-            errors = self.__validate_network(
+            errors = self._validate_network(
                 dataset_fractions,
                 self.parameters.validation_metrics
             )
@@ -1504,7 +1496,7 @@ class TrainerGNN(RunnerGraph):
 
         if self.parameters.after_before_training_metric != \
                 self.parameters.during_training_metric:
-            vloss = self.__validate_network(self.network,
+            vloss = self._validate_network(self.network,
                                             "validation",
                                             self.parameters.
                                             after_before_training_metric)
@@ -1517,7 +1509,7 @@ class TrainerGNN(RunnerGraph):
 
         tloss = float("inf")
         if len(self.data.test_data_sets) > 0:
-            tloss = self.__validate_network(
+            tloss = self._validate_network(
                 self.network, "test",
                 self.parameters.after_before_training_metric
             )
@@ -1533,6 +1525,66 @@ class TrainerGNN(RunnerGraph):
             if len(self.data.test_data_sets) > 0:
                 self.test_data_loaders.cleanup()
 
+    def _validate_network(self, data_set_fractions, metrics):
+        # """Validate a network, using train, test or validation data."""
+        self.network.eval()
+        errors = {}
+        for data_set_type in data_set_fractions:
+            if data_set_type == "train":
+                data_loaders = self.training_data_loaders
+                data_sets = self.data.training_data_sets
+                number_of_snapshots = self.data.nr_training_snapshots
+
+            elif data_set_type == "validation":
+                data_loaders = self.validation_data_loaders
+                data_sets = self.data.validation_data_sets
+                number_of_snapshots = self.data.nr_validation_snapshots
+                
+            elif data_set_type == "test":
+                data_loaders = self.test_data_loaders
+                data_sets = self.data.test_data_sets
+                number_of_snapshots = self.data.nr_test_snapshots
+            else:
+                raise Exception(f"Dataset type ({data_set_type}) not recognized.")
+            
+            errors[data_set_type] = {}
+            for metric in metrics:
+                errors[data_set_type][metric] = []
+                
+            if isinstance(data_loaders[0], MultiLazyLoadDataLoader):
+                raise Exception("MultiLazyLoadDataLoader not supported.")
+            
+            with torch.no_grad():
+                for snapshot_number in trange(
+                    number_of_snapshots,
+                    desc="Validation"
+                ):
+                    # Get optimal batch size and number of batches per snapshotss
+                    grid_size = self.data.parameters.snapshot_directories_list[snapshot_number].grid_size
+
+                    optimal_batch_size = self._correct_batch_size_for_testing(
+                        grid_size, self.parameters.mini_batch_size
+                    )
+                    number_of_batches_per_snapshot = int(grid_size / optimal_batch_size)
+
+                    actual_outputs, predicted_outputs = self._forward_entire_snapshot(
+                        snapshot_number, data_sets[0], data_set_type[0:2],
+                        number_of_batches_per_snapshot, optimal_batch_size
+                    )
+                    
+                    if "ldos" in metrics:
+                        error = ((actual_outputs-predicted_outputs)**2).mean()
+                        errors[data_set_type]["ldos"].append(error)
+                    
+                    energy_metrics = [metric for metric in metrics if "energy" in metric]
+                    if len(energy_metrics) > 0:
+                        energy_errors = self.__calculate_energy_errors(
+                            actual_outputs, predicted_outputs, energy_metrics, snapshot_number
+                        )
+                        for metric in energy_metrics:
+                            errors[data_set_type][metric].append(energy_errors[metric])
+        return errors
+    
     def __prepare_to_train(self, optimizer_dict):
         """Prepare everything for training."""
         # Configure keyword arguments for DataSampler.
@@ -1866,333 +1918,63 @@ class TrainerGNN(RunnerGraph):
             self.decoder_optimizer.zero_grad()
             return loss
 
-    def __validate_network(self, network, data_set_type, validation_type):
-        """Validate a network, using test or validation data."""
-        if data_set_type == "test":
-            data_loaders = self.test_data_loaders
-            data_sets = self.data.test_data_sets
-            number_of_snapshots = self.data.nr_test_snapshots
-            offset_snapshots = (
-                self.data.nr_validation_snapshots
-                + self.data.nr_training_snapshots
-            )
-
-        elif data_set_type == "validation":
-            data_loaders = self.validation_data_loaders
-            data_sets = self.data.validation_data_sets
-            number_of_snapshots = self.data.nr_validation_snapshots
-            offset_snapshots = self.data.nr_training_snapshots
-
-        else:
-            raise Exception(
-                "Please select test or validation when using this function."
-            )
-        network.eval()
-        if validation_type == "ldos":
-            # validation_loss_sum = torch.zeros(1, device=self.parameters.
-                                            #   _configuration["device"])
-            validation_loss_sum = 0
-            with torch.no_grad():
-                if self.parameters._configuration["gpu"] > 0:
-                    report_freq = self.parameters.training_log_interval
-                    torch.cuda.synchronize()
-                    tsample = time.time()
-                    batchid = 0
-                    for loader in data_loaders:
-                        printout(f"Validating {validation_type} on {data_set_type} data set.")
-                        graph_ions: dgl.DGLGraph
-                        graph_grid: dgl.DGLGraph
-                        
-                        embeddings = {}
-
-                        for graph_ions, graph_grid in tqdm(
-                            loader, desc="validation", disable=self.parameters_full.verbosity < 2,
-                            total=len(loader)
-                        ):
-                            graph_grid = graph_grid.to(
-                                self.parameters._configuration["device"], non_blocking=True
-                            )
-                            graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
-                            if graph_ions_hash not in embeddings:
-                                torch.cuda.nvtx.range_push("embedding calcuation")
-                                embedding_extended = self._compute_embedding(graph_ions, graph_grid)
-                                torch.cuda.nvtx.range_pop()
-                                embeddings[graph_ions_hash] = embedding_extended
-                            embedding_extended = embeddings[graph_ions_hash]
-
-                            if (
-                                self.parameters.use_graphs
-                                and self.validation_graph is None
-                            ):
-                                printout(
-                                    "Capturing CUDA graph for validation.",
-                                    min_verbosity=2,
-                                )
-                                s = torch.cuda.Stream(
-                                    self.parameters._configuration["device"]
-                                )
-                                s.wait_stream(
-                                    torch.cuda.current_stream(
-                                        self.parameters._configuration[
-                                            "device"
-                                        ]
-                                    )
-                                )
-                                # Warmup for graphs
-                                with torch.cuda.stream(s):
-                                    for _ in range(20):
-                                        with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                            embedding_extended_ = network.get_embedding(graph_ions, graph_grid)
-                                            prediction = network.predict_ldos(embedding_extended_, graph_ions, graph_grid)
-                                            loss = network.calculate_loss(prediction, graph_ions, graph_grid)
-                                torch.cuda.current_stream().wait_stream(s)
-
-                                # Create static entry point tensors to graph
-
-                                self.static_graph_ions_validation = graph_ions.clone()
-                                for key, value in graph_ions.ndata.items():
-                                    self.static_graph_ions_validation.ndata[key] = value.clone()
-                                for key, value in graph_ions.edata.items():
-                                    self.static_graph_ions_validation.edata[key] = value.clone()
-
-                                self.static_graph_grid_validation = graph_grid.clone()
-                                for key, value in graph_grid.ndata.items():
-                                    self.static_graph_grid_validation.ndata[key] = value.clone()
-                                for key, value in graph_grid.edata.items():
-                                    self.static_graph_grid_validation.edata[key] = value.clone()
-
-                                self.static_embedding_extended_validation = {}
-                                for key, value in embedding_extended.items():
-                                    self.static_embedding_extended_validation[key] = value.clone()
-                                
-
-                                # Capture graph
-                                self.validation_graph = torch.cuda.CUDAGraph()
-                                with torch.cuda.graph(self.validation_graph):
-                                    with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                        self.static_prediction_validation = network.predict_ldos(
-                                            self.static_embedding_extended_validation,
-                                            self.static_graph_ions_validation, self.static_graph_grid_validation,
-                                        )
-                                        self.static_loss_validation = network.calculate_loss(
-                                            self.static_prediction_validation, self.static_graph_ions_validation,
-                                            self.static_graph_grid_validation)
-
-                            if self.validation_graph:
-                                # ! Assumes same number of nodes and edges
-
-                                # Copy connections (edges) to static graph
-                                src_ions, dst_ions = graph_ions.edges()
-                                src_ions_static, dst_ions_static = self.static_graph_ions_validation.edges()
-                                src_ions_static.copy_(src_ions)
-                                dst_ions_static.copy_(dst_ions)
-                                src_grid, dst_grid = graph_grid.edges()
-                                src_grid_static, dst_grid_static = self.static_graph_grid_validation.edges()
-                                src_grid_static.copy_(src_grid)
-                                dst_grid_static.copy_(dst_grid)
-
-                                # Copy data to static tensors
-                                for key, value in graph_ions.ndata.items():
-                                    self.static_graph_ions_validation.ndata[key].copy_(value)
-                                for key, value in graph_ions.edata.items():
-                                    self.static_graph_ions_validation.edata[key].copy_(value)
-
-                                for key, value in graph_grid.ndata.items():
-                                    self.static_graph_grid_validation.ndata[key].copy_(value)
-                                for key, value in graph_grid.edata.items():
-                                    self.static_graph_grid_validation.edata[key].copy_(value)
-                                
-                                for key, value in embedding_extended.items():
-                                    self.static_embedding_extended_validation[key].copy_(value)
-
-                                self.validation_graph.replay()
-                                validation_loss_sum += self.static_loss_validation.detach().cpu().item()
-                            else:
-                                with torch.cuda.amp.autocast(enabled=self.parameters.use_mixed_precision):
-                                    prediction = network.predict_ldos(embedding_extended, graph_ions, graph_grid)
-                                    loss = network.calculate_loss(prediction, graph_ions, graph_grid)
-                                    validation_loss_sum += loss.detach().cpu().item()
-                            if batchid != 0 and (batchid + 1) % report_freq == 0:
-                                torch.cuda.synchronize()
-                                sample_time = time.time() - tsample
-                                avg_sample_time = sample_time / report_freq
-                                avg_sample_tput = report_freq * (graph_grid.num_nodes()-graph_ions.num_nodes()) / sample_time
-                                printout(f"batch {batchid + 1}, " #/{total_samples}, "
-                                         f"validation avg time: {avg_sample_time} "
-                                         f"validation avg throughput: {avg_sample_tput}",
-                                         min_verbosity=3)
-                                tsample = time.time()
-                            graph_grid.to('cpu', non_blocking=True)
-                            batchid += 1
-                    torch.cuda.synchronize(
-                        self.parameters._configuration["device"]
-                    )
-                else:
-                    batchid = 0
-                    for loader in data_loaders:
-                        for x, y in loader:
-                            x = x.to(self.parameters._configuration["device"])
-                            y = y.to(self.parameters._configuration["device"])
-                            prediction = network(x)
-
-                            if hasattr(network, "module"):
-                                loss = network.module.calculate_loss(
-                                    prediction, y
-                                )
-                            else:
-                                loss = network.calculate_loss(prediction, y)
-
-                            validation_loss_sum += loss.item()
-                            batchid += 1
-
-            validation_loss = validation_loss_sum / batchid
-            return validation_loss
-        elif (
-            validation_type == "band_energy"
-            or validation_type == "total_energy"
-        ):
-            errors = []
-            if isinstance(
-                self.validation_data_loaders, MultiLazyLoadDataLoader
-            ):
-                loader_id = 0
-                for loader in data_loaders:
-                    grid_size = self.data.parameters.snapshot_directories_list[
-                        loader_id + offset_snapshots
-                    ].grid_size
-
-                    actual_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension)
-                    )
-                    predicted_outputs = np.zeros(
-                        (grid_size, self.data.output_dimension)
-                    )
-                    last_start = 0
-
-                    embeddings = {}
-
-                    printout(f"Validating {validation_type} on {data_set_type} data set.")
-                    for graph_ions, graph_grid in tqdm(
-                        loader, desc="validation", disable=self.parameters_full.verbosity < 2,
-                        total=len(loader)
-                    ):
-                        graph_grid = graph_grid.to(self.parameters._configuration["device"], non_blocking=True)
-                        
-                        # TODO: check if this makes sense
-                        length = int(graph_grid.number_of_nodes()-graph_ions.number_of_nodes())
-
-                        graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
-                        if graph_ions_hash not in embeddings:
-                            torch.cuda.nvtx.range_push("embedding calcuation")
-                            embedding_extended = self._compute_embedding(graph_ions, graph_grid)
-                            torch.cuda.nvtx.range_pop()
-                            embeddings[graph_ions_hash] = embedding_extended
-                        embedding_extended = embeddings[graph_ions_hash]
-
-                        predicted_outputs[last_start:last_start + length, :] = \
-                            self.data.output_data_scaler. \
-                                inverse_transform(self.network.predict_ldos(embedding_extended, graph_ions, graph_grid).
-                                                  to('cpu'), as_numpy=True)
-                        actual_outputs[last_start:last_start + length, :] = \
-                            self.data.output_data_scaler.inverse_transform(
-                                graph_grid.ndata['target'][graph_ions.number_of_nodes():].to('cpu'), as_numpy=True)
-                        graph_grid.to('cpu', non_blocking=True)
-                        last_start += length
-                    errors.append(self._calculate_energy_errors(
-                        actual_outputs, predicted_outputs, validation_type,
-                        loader_id+offset_snapshots
-                    ))
-                    loader_id += 1
-
-            else:
-                for snapshot_number in range(
-                    offset_snapshots, number_of_snapshots + offset_snapshots
-                ):
-                    # Get optimal batch size and number of batches per snapshotss
-                    grid_size = self.data.parameters.snapshot_directories_list[
-                        snapshot_number
-                    ].grid_size
-
-                    # optimal_batch_size = self._correct_batch_size_for_testing(
-                    #     grid_size, self.parameters.mini_batch_size
-                    # ) # ?????????
-
-                    optimal_batch_size = self._correct_batch_size_for_testing(
-                        grid_size, self.parameters.ldos_grid_batch_size
-                    )
-                    number_of_batches_per_snapshot = int(grid_size /
-                                                         optimal_batch_size)
-
-                    actual_outputs, predicted_outputs = self._forward_entire_snapshot(
-                        snapshot_number-offset_snapshots, data_sets[0], data_set_type[0:2],
-                        number_of_batches_per_snapshot, optimal_batch_size
-                    )
-
-                    errors.append(self._calculate_energy_errors(
-                        actual_outputs, predicted_outputs, validation_type,
-                        snapshot_number
-                    ))
-            return np.mean(errors)
-        else:
-            raise Exception("Selected validation method not supported.")
-
-    def _calculate_energy_errors(
-        self, actual_outputs, predicted_outputs, energy_type, snapshot_number
+    def __calculate_energy_errors(
+        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
     ):
         self.data.target_calculator.read_additional_calculation_data(
             self.data.get_snapshot_calculation_output(snapshot_number)
         )
-        if energy_type == "band_energy":
-            try:
-                fe_actual = self.data.target_calculator.get_self_consistent_fermi_energy(
-                    actual_outputs
-                )
-                be_actual = self.data.target_calculator.get_band_energy(
-                    actual_outputs, fermi_energy=fe_actual
-                )
-
-                fe_predicted = self.data.target_calculator.get_self_consistent_fermi_energy(
-                    predicted_outputs
-                )
-                be_predicted = self.data.target_calculator.get_band_energy(
-                    predicted_outputs, fermi_energy=fe_predicted
-                )
-                return np.abs(be_predicted - be_actual) * (
-                    1000 / len(self.data.target_calculator.atoms)
-                )
-            except ValueError:
+            
+        errors = {}
+        try:
+            fe_actual = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(actual_outputs)
+            fe_predicted = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(predicted_outputs)
+        except ValueError:
                 # If the training went badly, it might be that the above
                 # code results in an error, due to the LDOS being so wrong
                 # that the estimation of the self consistent Fermi energy
                 # fails.
-                return float("inf")
-        elif energy_type == "total_energy":
-            try:
-                fe_actual = self.data.target_calculator.get_self_consistent_fermi_energy(
-                    actual_outputs
-                )
-                be_actual = self.data.target_calculator.get_total_energy(
-                    ldos_data=actual_outputs, fermi_energy=fe_actual
-                )
-
-                fe_predicted = self.data.target_calculator.get_self_consistent_fermi_energy(
-                    predicted_outputs
-                )
-                be_predicted = self.data.target_calculator.get_total_energy(
-                    ldos_data=predicted_outputs, fermi_energy=fe_predicted
-                )
-                return np.abs(be_predicted - be_actual) * (
-                    1000 / len(self.data.target_calculator.atoms)
-                )
-            except ValueError:
-                # If the training went badly, it might be that the above
-                # code results in an error, due to the LDOS being so wrong
-                # that the estimation of the self consistent Fermi energy
-                # fails.
-                return float("inf")
-
-        else:
-            raise Exception("Invalid energy type requested.")
+            errors = {
+                "fermi_energy": float("inf"),
+                "band_energy": float("inf"),
+                "total_energy": float("inf")
+            }
+            return errors
+        for energy_type in energy_types:
+            if energy_type == "fermi_energy":
+                fe_error = np.abs(fe_predicted - fe_actual)
+                errors["fermi_energy"] = fe_error
+            elif energy_type == "band_energy":
+                try:
+                    be_actual = self.data.target_calculator.get_band_energy(
+                        actual_outputs, fermi_energy=fe_actual
+                    )
+                    be_predicted = self.data.target_calculator.get_band_energy(
+                        predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    be_error = np.abs(be_predicted - be_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["band_energy"] = be_error
+                except ValueError:
+                    errors["band_energy"] = float("inf")
+            elif energy_type == "total_energy":
+                try:
+                    te_actual = self.data.target_calculator.get_total_energy(
+                        ldos_data=actual_outputs, fermi_energy=fe_actual
+                    )
+                    te_predicted = self.data.target_calculator.get_total_energy(
+                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    te_error = np.abs(te_predicted - te_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["total_energy"] = te_error
+                except ValueError:
+                    errors["total_energy"] = float("inf")
+            else:
+                raise Exception(f"Invalid energy type ({energy_type}) requested.")
+        return errors
 
 
     def __create_training_checkpoint(self, epoch=None):

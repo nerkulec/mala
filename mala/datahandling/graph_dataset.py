@@ -73,7 +73,7 @@ class GraphDataset(Dataset):
         )
       )
       
-      self.n_ldos_batches = len(self.ldos_graphs[0])
+    self.n_ldos_batches = len(self.ldos_graphs[0])
         
 
   def __getitem__(self, i):

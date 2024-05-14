@@ -113,7 +113,7 @@ warned_about_n_batches = False
 # @lru_cache(maxsize=1000)
 # @pickle_cache(folder_name='ldos_graphs')
 def get_ldos_graphs(
-  atoms_path, ldos, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=(90, 90, 60, 201),
+  atoms_path, ldos, ldos_batch_size=1000, n_closest_ldos=32, ldos_shape=None,
   max_degree=1, n_batches=None, corner=False, randomize_ldos_grid_positions=False, seed=None
 ):
   atoms = read(atoms_path)
@@ -126,19 +126,18 @@ def get_ldos_graphs(
   if n_batches is not None:
     global warned_about_n_batches
     if not warned_about_n_batches:
-      printout("WARNING: Using 'n_batches' should be only used for testing", min_verbosity=1)
+      printout("WARNING: Using 'n_batches' should be only used for development", min_verbosity=1)
       warned_about_n_batches = True
     cartesian_ldos_positions = cartesian_ldos_positions[:ldos_batch_size*n_batches]
   
   
-  seed = atoms_path+seed
-  random_permutation = np.arange(len(cartesian_ldos_positions))  
   if randomize_ldos_grid_positions:
+    seed = atoms_path+seed
+    random_permutation = np.arange(len(cartesian_ldos_positions))  
     rs = np.random.RandomState(seed)
     rs.shuffle(random_permutation)
-    
-  ldos = ldos[random_permutation]
-  cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
+    ldos = ldos[random_permutation]
+    cartesian_ldos_positions = cartesian_ldos_positions[random_permutation]
 
   cartesian_ldos_positions = torch.tensor(cartesian_ldos_positions, dtype=torch.float32)
   if len(cartesian_ldos_positions) % ldos_batch_size != 0:
@@ -200,7 +199,7 @@ def get_ldos_graphs(
   return ldos_graphs
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=170)
 def load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions):
   ldos = np.load(ldos_path)
   ldos = ldos.reshape((-1, ldos.shape[-1]))

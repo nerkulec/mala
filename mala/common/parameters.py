@@ -622,10 +622,11 @@ class ParametersData(ParametersBase):
         self.use_fast_tensor_data_set = False
         self.use_graph_data_set = False
         self.use_on_the_fly_graph_dataset = False
+        self.use_vanilla_graph_dataset_for_validation = True
         self.n_prefetch = 100
         self.n_closest_ions = 8
         self.n_closest_ldos = 16
-        self.grid_points_in_corners = False
+        self.grid_points_in_corners = True
         self.snapshot_frac = 1.0
         self.n_batches = None
         self.on_the_fly_shuffling = True

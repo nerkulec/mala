@@ -222,12 +222,16 @@ class OnTheFlyGraphDataset(Dataset):
     else:
       prefetch_snapshot_index, prefetch_batch_index = self.next_batch_tuples[prefetch_index]
     
+    print(f"Prefetching {prefetch_snapshot_index} {prefetch_batch_index}")
+    def _load_graph(graph_loader, batch_index):
+      return graph_loader(batch_index)
     future_graph = self.pool_executor.submit(
-      lambda graph_loader, batch_index: graph_loader(batch_index), self.graph_loaders[prefetch_snapshot_index], prefetch_batch_index,
+      _load_graph, self.graph_loaders[prefetch_snapshot_index], prefetch_batch_index,
     )
-    future_graph.add_done_callback(lambda ldos_graph:
+    def _callback(ldos_graph):
+      print(f"Prefetched {prefetch_snapshot_index} {prefetch_batch_index}")
       self.save_ldos_graph_and_cleanup(prefetch_snapshot_index, prefetch_batch_index, ldos_graph.result())
-    )
+    future_graph.add_done_callback(_callback)
     
     if i == len(self.batch_tuples)-1:
       self.batch_tuples = self.next_batch_tuples
@@ -235,6 +239,12 @@ class OnTheFlyGraphDataset(Dataset):
       printout(f"Cache misses: {self.cache_misses}/{len(self.batch_tuples)}", min_verbosity=1)
       self.cache_misses = 0
     
+    return ion_graph, ldos_graph
+  
+  def get_full(self, snapshot_index, batch_index):
+    ion_graph = self.ion_graphs[snapshot_index]
+    graph_loader = self.graph_loaders[snapshot_index]
+    ldos_graph = graph_loader(batch_index)
     return ion_graph, ldos_graph
 
   def __len__(self):

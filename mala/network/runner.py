@@ -683,10 +683,10 @@ class RunnerGraph:
         loaded_runner = cls(params, network, data)
         return loaded_runner
 
-    def _forward_entire_snapshot(self, snapshot_number, data_set,
-                                 data_set_type,
-                                 number_of_batches_per_snapshot=0,
-                                 batch_size=0):
+    def _forward_entire_snapshot(
+        self, snapshot_number, data_set, data_set_type,
+        number_of_batches_per_snapshot=0, batch_size=0
+    ):
         """
         Forward a snapshot through the network, get actual/predicted output.
 
@@ -714,7 +714,6 @@ class RunnerGraph:
 
         # TODO: check if this makes sense
         actual_outputs = np.zeros((grid_size, self.data.output_dimension))
-        embeddings = {}
         for i in range(0, data_set.n_ldos_batches):
             graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches + i]
 
@@ -727,31 +726,19 @@ class RunnerGraph:
             i_start = i * data_set.ldos_batch_size
             i_end = (i + 1) * data_set.ldos_batch_size
             actual_outputs[i_start:i_end, :] = targets_grid_scaled
-
-
-            # actual_outputs[i * data_set.ldos_batch_size:(i + 1) * data_set.ldos_batch_size, :] = \
-            #     self.data.output_data_scaler.inverse_transform(
-            #         graph_grid.ndata['target'][graph_ions.num_nodes():].to('cpu'), as_numpy=True)
-
+            
+        graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches]
+        embedding = self._compute_embedding(graph_ions, graph_grid)
         predicted_outputs = np.zeros((grid_size, self.data.output_dimension))
-        for i in trange(0, data_set.n_ldos_batches, desc="Predicting LDOS in batches", disable=self.parameters.verbosity < 2):
+        for i in trange(0, data_set.n_ldos_batches, desc="Predicting LDOS in batches", disable=self.parameters.verbosity < 1):
             graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches + i]
 
             graph_grid = graph_grid.to(
                 self.parameters._configuration["device"], non_blocking=True
             )
 
-            graph_ions_hash = hash(graph_ions.edata['rel_pos'][:100].numpy().tobytes())
-            if graph_ions_hash not in embeddings:
-                torch.cuda.nvtx.range_push("embedding calcuation")
-                embedding_extended = self._compute_embedding(graph_ions, graph_grid)
-                torch.cuda.nvtx.range_pop()
-                embeddings[graph_ions_hash] = embedding_extended
-            embedding_extended = embeddings[graph_ions_hash]
-
             predicted_outputs[i * data_set.ldos_batch_size:(i + 1) * data_set.ldos_batch_size, :] = \
-                self.data.output_data_scaler.inverse_transform(
-                    self.network.predict_ldos(embedding_extended, graph_ions, graph_grid).to('cpu'), as_numpy=True)
+                self.network.predict_ldos(embedding, graph_ions, graph_grid).to('cpu')
         
         # Restricting the actual quantities to physical meaningful values,
         # i.e. restricting the (L)DOS to positive values.

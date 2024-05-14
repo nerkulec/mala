@@ -1641,6 +1641,16 @@ class DataHandlerGraph(DataHandler):
                     n_batches=self.params.data.n_batches,
                     grid_points_in_corners=self.params.data.grid_points_in_corners,
                 ))
+            elif self.parameters.use_vanilla_graph_dataset_for_validation:
+                self.validation_data_sets.append(GraphDataset(
+                    self.params.data.n_closest_ions,
+                    self.params.data.n_closest_ldos,
+                    self.params.running.ldos_grid_batch_size,
+                    self.params.network.max_degree,
+                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
+                    n_batches=self.params.data.n_batches,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners,
+                ))
             elif self.parameters.use_on_the_fly_graph_dataset:
                 self.validation_data_sets.append(OnTheFlyGraphDataset(
                     self.params.data.n_closest_ions,
@@ -1650,9 +1660,7 @@ class DataHandlerGraph(DataHandler):
                     ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
                     n_batches=self.params.data.n_batches,
                     n_prefetch=self.params.data.n_prefetch,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                    on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
-                    ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
+                    grid_points_in_corners=self.params.data.grid_points_in_corners
                 ))
             else:
                 self.validation_data_sets.append(GraphDataset(
