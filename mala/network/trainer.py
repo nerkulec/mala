@@ -521,20 +521,21 @@ class TrainerMLP(RunnerMLP):
                 data_sets = self.data.training_data_sets
                 number_of_snapshots = self.data.nr_training_snapshots
                 offset_snapshots = 0
-                
-            elif data_set_type == "test":
-                data_loaders = self.test_data_loaders
-                data_sets = self.data.test_data_sets
-                number_of_snapshots = self.data.nr_test_snapshots
-                offset_snapshots = \
-                    self.data.nr_validation_snapshots \
-                    + self.data.nr_training_snapshots
 
             elif data_set_type == "validation":
                 data_loaders = self.validation_data_loaders
                 data_sets = self.data.validation_data_sets
                 number_of_snapshots = self.data.nr_validation_snapshots
                 offset_snapshots = self.data.nr_training_snapshots
+                
+            elif data_set_type == "test":
+                data_loaders = self.test_data_loaders
+                data_sets = self.data.test_data_sets
+                number_of_snapshots = self.data.nr_test_snapshots
+                offset_snapshots = self.data.nr_validation_snapshots + \
+                    self.data.nr_training_snapshots
+            else:
+                raise Exception(f"Dataset type ({data_set_type}) not recognized.")
             
             errors[data_set_type] = {}
             for metric in metrics:
@@ -545,7 +546,7 @@ class TrainerMLP(RunnerMLP):
             
             with torch.no_grad():
                 for snapshot_number in trange(
-                    number_of_snapshots,
+                    offset_snapshots, number_of_snapshots+offset_snapshots,
                     desc="Validation"
                 ):
                     # Get optimal batch size and number of batches per snapshotss
@@ -557,7 +558,7 @@ class TrainerMLP(RunnerMLP):
                     number_of_batches_per_snapshot = int(grid_size / optimal_batch_size)
 
                     actual_outputs, predicted_outputs = self._forward_entire_snapshot(
-                        snapshot_number+offset_snapshots, data_sets[0], data_set_type[0:2],
+                        snapshot_number, data_sets[0], data_set_type[0:2],
                         number_of_batches_per_snapshot, optimal_batch_size
                     )
                     
@@ -567,13 +568,12 @@ class TrainerMLP(RunnerMLP):
                     
                     energy_metrics = [metric for metric in metrics if "energy" in metric]
                     if len(energy_metrics) > 0:
-                        energy_errors = self.__calculate_energy_errors(
+                        energy_errors = self._calculate_energy_errors(
                             actual_outputs, predicted_outputs, energy_metrics, snapshot_number
                         )
                         for metric in energy_metrics:
                             errors[data_set_type][metric].append(energy_errors[metric])
         return errors
-    
 
     def __prepare_to_train(self, optimizer_dict):
         """Prepare everything for training."""
@@ -935,7 +935,7 @@ class TrainerMLP(RunnerMLP):
             self.optimizer.zero_grad()
             return loss
 
-    def __calculate_energy_errors(
+    def _calculate_energy_errors(
         self, actual_outputs, predicted_outputs, energy_types, snapshot_number
     ):
         self.data.target_calculator.read_additional_calculation_data(
@@ -1642,7 +1642,7 @@ class TrainerGNN(RunnerGraph):
                     
                     energy_metrics = [metric for metric in metrics if "energy" in metric]
                     if len(energy_metrics) > 0:
-                        energy_errors = self.__calculate_energy_errors(
+                        energy_errors = self._calculate_energy_errors(
                             actual_outputs, predicted_outputs, energy_metrics, snapshot_number
                         )
                         for metric in energy_metrics:
@@ -1982,7 +1982,7 @@ class TrainerGNN(RunnerGraph):
             self.decoder_optimizer.zero_grad()
             return loss
 
-    def __calculate_energy_errors(
+    def _calculate_energy_errors(
         self, actual_outputs, predicted_outputs, energy_types, snapshot_number
     ):
         self.data.target_calculator.read_additional_calculation_data(
