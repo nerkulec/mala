@@ -199,7 +199,7 @@ def get_ldos_graphs(
   return ldos_graphs
 
 
-@lru_cache(maxsize=170)
+@lru_cache(maxsize=20)
 def load_permuted_ldos(ldos_path, seed, randomize_ldos_grid_positions):
   ldos = np.load(ldos_path)
   ldos = ldos.reshape((-1, ldos.shape[-1]))

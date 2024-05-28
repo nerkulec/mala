@@ -3,6 +3,8 @@
 import os
 from zipfile import ZipFile, ZIP_STORED
 
+from mala.common.parallelizer import printout
+
 try:
     import horovod.torch as hvd
 except ModuleNotFoundError:
@@ -19,7 +21,112 @@ from mala import Parameters
 
 from tqdm.auto import tqdm, trange
 
-class RunnerMLP:
+class Runner:
+    def _calculate_energy_errors(
+        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
+    ):
+        self.data.target_calculator.read_additional_calculation_data(
+            self.data.get_snapshot_calculation_output(snapshot_number)
+        )
+            
+        errors = {}
+        fe_dft = self.data.target_calculator.fermi_energy_dft
+        fe_actual = None
+        fe_predicted = None
+        try:
+            fe_actual = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(actual_outputs)
+        except ValueError:
+            errors = {energy_type: float("inf") for energy_type in energy_types}
+            printout("CAUTION! LDOS ground truth is so wrong that the "
+                     "estimation of the self consistent Fermi energy fails.")
+            return errors
+        try:
+            fe_predicted = self.data.target_calculator. \
+                get_self_consistent_fermi_energy(predicted_outputs)
+        except ValueError:
+            errors = {energy_type: float("inf") for energy_type in energy_types}
+            printout("CAUTION! LDOS prediction is so wrong that the "
+                     "estimation of the self consistent Fermi energy fails.")
+            return errors
+        for energy_type in energy_types:
+            if energy_type == "fermi_energy":
+                fe_error = np.abs(fe_predicted - fe_actual)
+                errors["fermi_energy"] = fe_error
+            elif energy_type == "fermi_energy_dft":
+                fe_error_dft = np.abs(fe_predicted - fe_dft)
+                errors["fermi_energy_dft"] = fe_error_dft
+            elif energy_type == "band_energy":
+                try:
+                    be_actual = self.data.target_calculator.get_band_energy(
+                        actual_outputs, fermi_energy=fe_actual
+                    )
+                    be_predicted = self.data.target_calculator.get_band_energy(
+                        predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    be_error = np.abs(be_predicted - be_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["band_energy"] = be_error
+                except ValueError:
+                    errors["band_energy"] = float("inf")
+            elif energy_type == "band_energy_dft_fe":
+                try:
+                    be_predicted_dft_fe = self.data.target_calculator.get_band_energy(
+                        predicted_outputs, fermi_energy=fe_dft
+                    )
+                    be_error_dft_fe = np.abs(be_predicted_dft_fe - be_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["band_energy_dft_fe"] = be_error_dft_fe
+                except ValueError:
+                    errors["band_energy_dft_fe"] = float("inf")
+            elif energy_type == "band_energy_actual_fe":
+                try:
+                    be_predicted_actual_fe = self.data.target_calculator.get_band_energy(
+                        predicted_outputs, fermi_energy=fe_actual
+                    )
+                    be_error_actual_fe = np.abs(be_predicted_actual_fe - be_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["band_energy_actual_fe"] = be_error_actual_fe
+                except ValueError:
+                    errors["band_energy_actual_fe"] = float("inf")
+            elif energy_type == "total_energy":
+                try:
+                    te_actual = self.data.target_calculator.get_total_energy(
+                        ldos_data=actual_outputs, fermi_energy=fe_actual
+                    )
+                    te_predicted = self.data.target_calculator.get_total_energy(
+                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
+                    )
+                    te_error = np.abs(te_predicted - te_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["total_energy"] = te_error
+                except ValueError:
+                    errors["total_energy"] = float("inf")
+            elif energy_type == "total_energy_dft_fe":
+                try:
+                    te_predicted_dft_fe = self.data.target_calculator.get_total_energy(
+                        predicted_outputs, fermi_energy=fe_dft
+                    )
+                    te_error_dft_fe = np.abs(te_predicted_dft_fe - te_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["total_energy_dft_fe"] = te_error_dft_fe
+                except ValueError:
+                    errors["total_energy_dft_fe"] = float("inf")
+            elif energy_type == "total_energy_actual_fe":
+                try:
+                    te_predicted_actual_fe = self.data.target_calculator.get_total_energy(
+                        predicted_outputs, fermi_energy=fe_actual
+                    )
+                    te_error_actual_fe = np.abs(te_predicted_actual_fe - te_actual) * \
+                        (1000 / len(self.data.target_calculator.atoms))
+                    errors["total_energy_actual_fe"] = te_error_actual_fe
+                except ValueError:
+                    errors["total_energy_actual_fe"] = float("inf")
+            else:
+                raise Exception(f"Invalid energy type ({energy_type}) requested.")
+        return errors
+
+class RunnerMLP(Runner):
     """
     Parent class for all classes that in some sense "run" the network.
 
@@ -443,7 +550,7 @@ class RunnerMLP:
 
 
 
-class RunnerGraph:
+class RunnerGraph(Runner):
     """
     Parent class for all classes that in some sense "run" the network.
 

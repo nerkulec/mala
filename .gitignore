@@ -155,9 +155,17 @@ cython_debug/
 *.pth
 *.json
 
+# Images
+*.png
+
 # JupyterNotebooks
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
+*.ipynb
+
+# Logs
+*/lightning_logs/*
+*/wandb/*
 
 # SQLite
 *.db

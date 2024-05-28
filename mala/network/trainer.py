@@ -573,6 +573,16 @@ class TrainerMLP(RunnerMLP):
                         )
                         for metric in energy_metrics:
                             errors[data_set_type][metric].append(energy_errors[metric])
+
+                    if "number_of_electrons" in metrics:
+                        if len(energy_metrics) == 0:
+                            raise Exception(
+                                "Number of electrons can only be calculated if energy metrics are calculated."
+                            )
+                        num_electrons = self.data.target_calculator.number_of_electrons_exact
+                        num_electrons_pred = self.data.target_calculator.get_number_of_electrons(predicted_outputs)
+                        error = abs(num_electrons - num_electrons_pred)
+                        errors[data_set_type]["number_of_electrons"].append(error)
         return errors
 
     def __prepare_to_train(self, optimizer_dict):
@@ -934,65 +944,6 @@ class TrainerMLP(RunnerMLP):
             self.optimizer.step()
             self.optimizer.zero_grad()
             return loss
-
-    def _calculate_energy_errors(
-        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
-    ):
-        self.data.target_calculator.read_additional_calculation_data(
-            self.data.get_snapshot_calculation_output(snapshot_number)
-        )
-            
-        errors = {}
-        try:
-            fe_actual = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(actual_outputs)
-            fe_predicted = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(predicted_outputs)
-        except ValueError:
-                # If the training went badly, it might be that the above
-                # code results in an error, due to the LDOS being so wrong
-                # that the estimation of the self consistent Fermi energy
-                # fails.
-            errors = {
-                "fermi_energy": float("inf"),
-                "band_energy": float("inf"),
-                "total_energy": float("inf")
-            }
-            return errors
-        for energy_type in energy_types:
-            if energy_type == "fermi_energy":
-                fe_error = np.abs(fe_predicted - fe_actual)
-                errors["fermi_energy"] = fe_error
-            elif energy_type == "band_energy":
-                try:
-                    be_actual = self.data.target_calculator.get_band_energy(
-                        actual_outputs, fermi_energy=fe_actual
-                    )
-                    be_predicted = self.data.target_calculator.get_band_energy(
-                        predicted_outputs, fermi_energy=fe_predicted
-                    )
-                    be_error = np.abs(be_predicted - be_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
-                    errors["band_energy"] = be_error
-                except ValueError:
-                    errors["band_energy"] = float("inf")
-            elif energy_type == "total_energy":
-                try:
-                    te_actual = self.data.target_calculator.get_total_energy(
-                        ldos_data=actual_outputs, fermi_energy=fe_actual
-                    )
-                    te_predicted = self.data.target_calculator.get_total_energy(
-                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
-                    )
-                    te_error = np.abs(te_predicted - te_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
-                    errors["total_energy"] = te_error
-                except ValueError:
-                    errors["total_energy"] = float("inf")
-            else:
-                raise Exception(f"Invalid energy type ({energy_type}) requested.")
-        return errors
-
 
     def __create_training_checkpoint(self):
         """
@@ -1645,8 +1596,18 @@ class TrainerGNN(RunnerGraph):
                         energy_errors = self._calculate_energy_errors(
                             actual_outputs, predicted_outputs, energy_metrics, snapshot_number
                         )
-                        for metric in energy_metrics:
+                        for metric in energy_errors.keys():
                             errors[data_set_type][metric].append(energy_errors[metric])
+
+                    if "number_of_electrons" in metrics:
+                        if len(energy_metrics) == 0:
+                            raise Exception(
+                                "Number of electrons can only be calculated if some energy metrics are calculated."
+                            )
+                        num_electrons = self.data.target_calculator.number_of_electrons_exact
+                        num_electrons_pred = self.data.target_calculator.get_number_of_electrons(predicted_outputs)
+                        error = abs(num_electrons - num_electrons_pred)
+                        errors[data_set_type]["number_of_electrons"].append(error)
         return errors
     
     def __prepare_to_train(self, optimizer_dict):
@@ -1981,65 +1942,6 @@ class TrainerGNN(RunnerGraph):
             self.decoder_optimizer.step()
             self.decoder_optimizer.zero_grad()
             return loss
-
-    def _calculate_energy_errors(
-        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
-    ):
-        self.data.target_calculator.read_additional_calculation_data(
-            self.data.get_snapshot_calculation_output(snapshot_number)
-        )
-            
-        errors = {}
-        try:
-            fe_actual = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(actual_outputs)
-            fe_predicted = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(predicted_outputs)
-        except ValueError:
-                # If the training went badly, it might be that the above
-                # code results in an error, due to the LDOS being so wrong
-                # that the estimation of the self consistent Fermi energy
-                # fails.
-            errors = {
-                "fermi_energy": float("inf"),
-                "band_energy": float("inf"),
-                "total_energy": float("inf")
-            }
-            return errors
-        for energy_type in energy_types:
-            if energy_type == "fermi_energy":
-                fe_error = np.abs(fe_predicted - fe_actual)
-                errors["fermi_energy"] = fe_error
-            elif energy_type == "band_energy":
-                try:
-                    be_actual = self.data.target_calculator.get_band_energy(
-                        actual_outputs, fermi_energy=fe_actual
-                    )
-                    be_predicted = self.data.target_calculator.get_band_energy(
-                        predicted_outputs, fermi_energy=fe_predicted
-                    )
-                    be_error = np.abs(be_predicted - be_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
-                    errors["band_energy"] = be_error
-                except ValueError:
-                    errors["band_energy"] = float("inf")
-            elif energy_type == "total_energy":
-                try:
-                    te_actual = self.data.target_calculator.get_total_energy(
-                        ldos_data=actual_outputs, fermi_energy=fe_actual
-                    )
-                    te_predicted = self.data.target_calculator.get_total_energy(
-                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
-                    )
-                    te_error = np.abs(te_predicted - te_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
-                    errors["total_energy"] = te_error
-                except ValueError:
-                    errors["total_energy"] = float("inf")
-            else:
-                raise Exception(f"Invalid energy type ({energy_type}) requested.")
-        return errors
-
 
     def __create_training_checkpoint(self, epoch=None):
         """
