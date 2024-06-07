@@ -11,7 +11,6 @@ import torch.nn.functional as functional
 from mala.common.parameters import Parameters
 from mala.common.parallelizer import printout
 
-<<<<<<< HEAD
 
 from dgl import DGLGraph
 import dgl
@@ -27,15 +26,6 @@ from se3_transformer.runtime.utils import str2bool
 from se3_transformer.model.fiber import Fiber
 from se3_transformer.model.transformer import Sequential, get_populated_edge_features
 
-
-try:
-    import horovod.torch as hvd
-except ModuleNotFoundError:
-    # Warning is thrown by parameters class
-    pass
-
-=======
->>>>>>> 8f9fbbae0bc77761fa8de5024c8ba1506316c27b
 
 class Network(nn.Module):
     """
