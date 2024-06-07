@@ -7,18 +7,16 @@ from packaging import version
 
 from mala.datahandling.on_the_fly_graph_dataset import Subset
 
-try:
-    import horovod.torch as hvd
-except ModuleNotFoundError:
-    # Warning is thrown by Parameters class
-    pass
 import numpy as np
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from mala.common.parameters import printout
+from mala.common.parallelizer import get_local_rank
 from mala.datahandling.fast_tensor_dataset import FastTensorDataset
 from mala.network.network import Network
 from mala.network.runner import RunnerMLP, RunnerGraph
@@ -61,6 +59,16 @@ class TrainerMLP(RunnerMLP):
     def __init__(self, params, network, data, optimizer_dict=None):
         # copy the parameters into the class.
         super(TrainerMLP, self).__init__(params, network, data)
+
+        if self.parameters_full.use_ddp:
+            printout("DDP activated, wrapping model in DDP.", min_verbosity=1)
+            # JOSHR: using streams here to maintain compatibility with
+            # graph capture
+            s = torch.cuda.Stream()
+            with torch.cuda.stream(s):
+                self.network = DDP(self.network)
+            torch.cuda.current_stream().wait_stream(s)
+
         self.final_test_loss = float("inf")
         self.initial_test_loss = float("inf")
         self.final_validation_loss = float("inf")
@@ -74,7 +82,7 @@ class TrainerMLP(RunnerMLP):
         self.validation_data_loaders = []
         self.test_data_loaders = []
 
-        # Samplers for the horovod case.
+        # Samplers for the ddp case.
         self.train_sampler = None
         self.test_sampler = None
         self.validation_sampler = None
@@ -217,6 +225,9 @@ class TrainerMLP(RunnerMLP):
             params_format=params_format,
             load_runner=load_runner,
             prepare_data=prepare_data,
+            load_with_gpu=None,
+            load_with_mpi=None,
+            load_with_ddp=None,
         )
 
     @classmethod
@@ -246,7 +257,11 @@ class TrainerMLP(RunnerMLP):
             The trainer that was loaded from the file.
         """
         # First, load the checkpoint.
-        checkpoint = torch.load(file)
+        if params.use_ddp:
+            map_location = {"cuda:%d" % 0: "cuda:%d" % get_local_rank()}
+            checkpoint = torch.load(file, map_location=map_location)
+        else:
+            checkpoint = torch.load(file)
 
         # Now, create the Trainer class with it.
         loaded_trainer = Trainer(
@@ -293,7 +308,7 @@ class TrainerMLP(RunnerMLP):
             )
 
             # train sampler
-            if self.parameters_full.use_horovod:
+            if self.train_sampler:
                 self.train_sampler.set_epoch(epoch)
 
             # shuffle dataset if necessary
@@ -599,16 +614,16 @@ class TrainerMLP(RunnerMLP):
         if optimizer_dict is not None:
             self.last_epoch = optimizer_dict["epoch"] + 1
 
-        # Scale the learning rate according to horovod.
-        if self.parameters_full.use_horovod:
-            if hvd.size() > 1 and self.last_epoch == 0:
+        # Scale the learning rate according to ddp.
+        if self.parameters_full.use_ddp:
+            if dist.get_world_size() > 1 and self.last_epoch == 0:
                 printout(
                     "Rescaling learning rate because multiple workers are"
                     " used for training.",
                     min_verbosity=1,
                 )
                 self.parameters.learning_rate = (
-                    self.parameters.learning_rate * hvd.size()
+                    self.parameters.learning_rate * dist.get_world_size()
                 )
 
         # Choose an optimizer to use.
@@ -646,15 +661,9 @@ class TrainerMLP(RunnerMLP):
             self.patience_counter = optimizer_dict["early_stopping_counter"]
             self.last_loss = optimizer_dict["early_stopping_last_loss"]
 
-        if self.parameters_full.use_horovod:
+        if self.parameters_full.use_ddp:
             # scaling the batch size for multiGPU per node
             # self.batch_size= self.batch_size*hvd.local_size()
-
-            compression = (
-                hvd.Compression.fp16
-                if self.parameters_full.running.use_compression
-                else hvd.Compression.none
-            )
 
             # If lazy loading is used we do not shuffle the data points on
             # their own, but rather shuffle them
@@ -668,17 +677,16 @@ class TrainerMLP(RunnerMLP):
             self.train_sampler = (
                 torch.utils.data.distributed.DistributedSampler(
                     self.data.training_data_sets[0],
-                    num_replicas=hvd.size(),
-                    rank=hvd.rank(),
+                    num_replicas=dist.get_world_size(),
+                    rank=dist.get_rank(),
                     shuffle=do_shuffle,
                 )
             )
-
             self.validation_sampler = (
                 torch.utils.data.distributed.DistributedSampler(
                     self.data.validation_data_sets[0],
-                    num_replicas=hvd.size(),
-                    rank=hvd.rank(),
+                    num_replicas=dist.get_world_size(),
+                    rank=dist.get_rank(),
                     shuffle=False,
                 )
             )
@@ -687,24 +695,11 @@ class TrainerMLP(RunnerMLP):
                 self.test_sampler = (
                     torch.utils.data.distributed.DistributedSampler(
                         self.data.test_data_sets[0],
-                        num_replicas=hvd.size(),
-                        rank=hvd.rank(),
+                        num_replicas=dist.get_world_size(),
+                        rank=dist.get_rank(),
                         shuffle=False,
                     )
                 )
-
-            # broadcaste parameters and optimizer state from root device to
-            # other devices
-            hvd.broadcast_parameters(self.network.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
-
-            # Wraps the opimizer for multiGPU operation
-            self.optimizer = hvd.DistributedOptimizer(
-                self.optimizer,
-                named_parameters=self.network.named_parameters(),
-                compression=compression,
-                op=hvd.Average,
-            )
 
         # Instantiate the learning rate scheduler, if necessary.
         if self.parameters.learning_rate_scheduler == "ReduceLROnPlateau":
@@ -732,7 +727,7 @@ class TrainerMLP(RunnerMLP):
         do_shuffle = self.parameters.use_shuffling_for_samplers
         if (
             self.data.parameters.use_lazy_loading
-            or self.parameters_full.use_horovod
+            or self.parameters_full.use_ddp
         ):
             do_shuffle = False
 
@@ -827,10 +822,8 @@ class TrainerMLP(RunnerMLP):
                             enabled=self.parameters.use_mixed_precision
                         ):
                             prediction = network(input_data)
-                            loss = network.calculate_loss(
-                                prediction, target_data
-                            )
-                            if hasattr(network, "module"):
+                            if self.parameters_full.use_ddp:
+                                # JOSHR: We have to use "module" here to access custom method of DDP wrapped model
                                 loss = network.module.calculate_loss(
                                     prediction, target_data
                                 )
@@ -853,7 +846,7 @@ class TrainerMLP(RunnerMLP):
 
                 # Capture graph
                 self.train_graph = torch.cuda.CUDAGraph()
-                self.network.zero_grad(set_to_none=True)
+                network.zero_grad(set_to_none=True)
                 with torch.cuda.graph(self.train_graph):
                     with torch.cuda.amp.autocast(
                         enabled=self.parameters.use_mixed_precision
@@ -862,9 +855,14 @@ class TrainerMLP(RunnerMLP):
                             self.static_input_data
                         )
 
-                        self.static_loss = network.calculate_loss(
-                            self.static_prediction, self.static_target_data
-                        )
+                        if self.parameters_full.use_ddp:
+                            self.static_loss = network.module.calculate_loss(
+                                self.static_prediction, self.static_target_data
+                            )
+                        else:
+                            self.static_loss = network.calculate_loss(
+                                self.static_prediction, self.static_target_data
+                            )
 
                         if hasattr(network, "module"):
                             self.static_loss = network.module.calculate_loss(
@@ -902,8 +900,7 @@ class TrainerMLP(RunnerMLP):
                     torch.cuda.nvtx.range_pop()
 
                     torch.cuda.nvtx.range_push("loss")
-                    t = time.time()
-                    if hasattr(network, "module"):
+                    if self.parameters_full.use_ddp:
                         loss = network.module.calculate_loss(
                             prediction, target_data
                         )
@@ -936,7 +933,7 @@ class TrainerMLP(RunnerMLP):
                 return loss
         else:
             prediction = network(input_data)
-            if hasattr(network, "module"):
+            if self.parameters_full.use_ddp:
                 loss = network.module.calculate_loss(prediction, target_data)
             else:
                 loss = network.calculate_loss(prediction, target_data)
@@ -957,8 +954,8 @@ class TrainerMLP(RunnerMLP):
 
         # Next, we save all the other objects.
 
-        if self.parameters_full.use_horovod:
-            if hvd.rank() != 0:
+        if self.parameters_full.use_ddp:
+            if dist.get_rank() != 0:
                 return
         if self.scheduler is None:
             save_dict = {
@@ -1995,8 +1992,9 @@ class TrainerGNN(RunnerGraph):
         self.save_run(run_name, save_runner=False) # ! TEMPORARY because breaking
 
     @staticmethod
-    def __average_validation(val, name):
+    def __average_validation(val, name, device="cpu"):
         """Average validation over multiple parallel processes."""
-        tensor = torch.tensor(val)
-        avg_loss = hvd.allreduce(tensor, name=name, op=hvd.Average)
+        tensor = torch.tensor(val, device=device)
+        dist.all_reduce(tensor)
+        avg_loss = tensor / dist.get_world_size()
         return avg_loss.item()

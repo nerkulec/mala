@@ -4,12 +4,14 @@ from abc import abstractmethod
 from typing import List
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as functional
 
 from mala.common.parameters import Parameters
 from mala.common.parallelizer import printout
 
+<<<<<<< HEAD
 
 from dgl import DGLGraph
 import dgl
@@ -32,6 +34,8 @@ except ModuleNotFoundError:
     # Warning is thrown by parameters class
     pass
 
+=======
+>>>>>>> 8f9fbbae0bc77761fa8de5024c8ba1506316c27b
 
 class Network(nn.Module):
     """
@@ -80,7 +84,7 @@ class Network(nn.Module):
 
     def __init__(self, params: Parameters):
         # copy the network params from the input parameter object
-        self.use_horovod = params.use_horovod
+        self.use_ddp = params.use_ddp
         self.mini_batch_size = params.running.mini_batch_size
         self.params = params.network
         self.parameters_full = params
@@ -179,9 +183,9 @@ class Network(nn.Module):
         path_to_file : string
             Path to the file in which the network should be saved.
         """
-        # If we use horovod, only save the network on root.
-        if self.use_horovod:
-            if hvd.rank() != 0:
+        # If we use ddp, only save the network on root.
+        if self.use_ddp:
+            if dist.get_rank() != 0:
                 return
         torch.save(
             self.state_dict(),

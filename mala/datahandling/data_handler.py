@@ -311,14 +311,14 @@ class DataHandlerMLP(DataHandler):
         if self.input_data_scaler is None:
             self.input_data_scaler = DataScaler(
                 self.parameters.input_rescaling_type,
-                use_horovod=self.use_horovod,
+                use_ddp=self.use_ddp,
             )
 
         self.output_data_scaler = output_data_scaler
         if self.output_data_scaler is None:
             self.output_data_scaler = DataScaler(
                 self.parameters.output_rescaling_type,
-                use_horovod=self.use_horovod,
+                use_ddp=self.use_ddp,
             )
 
         # Actual data points in the different categories.
@@ -872,7 +872,8 @@ class DataHandlerMLP(DataHandler):
                     self.output_data_scaler,
                     self.descriptor_calculator,
                     self.target_calculator,
-                    self.use_horovod,
+                    self.use_ddp,
+                    self.parameters._configuration["device"],
                     snapshot_frac=self.parameters.snapshot_frac,
                 )
             )
@@ -884,7 +885,8 @@ class DataHandlerMLP(DataHandler):
                     self.output_data_scaler,
                     self.descriptor_calculator,
                     self.target_calculator,
-                    self.use_horovod,
+                    self.use_ddp,
+                    self.parameters._configuration["device"],
                 )
             )
 
@@ -897,7 +899,8 @@ class DataHandlerMLP(DataHandler):
                         self.output_data_scaler,
                         self.descriptor_calculator,
                         self.target_calculator,
-                        self.use_horovod,
+                        self.use_ddp,
+                        self.parameters._configuration["device"],
                         input_requires_grad=True,
                     )
                 )
@@ -940,7 +943,7 @@ class DataHandlerMLP(DataHandler):
                             self.output_data_scaler,
                             self.descriptor_calculator,
                             self.target_calculator,
-                            self.use_horovod,
+                            self.use_ddp,
                         )
                     )
                 if snapshot.snapshot_function == "va":
@@ -954,7 +957,7 @@ class DataHandlerMLP(DataHandler):
                             self.output_data_scaler,
                             self.descriptor_calculator,
                             self.target_calculator,
-                            self.use_horovod,
+                            self.use_ddp,
                         )
                     )
                 if snapshot.snapshot_function == "te":
@@ -968,7 +971,7 @@ class DataHandlerMLP(DataHandler):
                             self.output_data_scaler,
                             self.descriptor_calculator,
                             self.target_calculator,
-                            self.use_horovod,
+                            self.use_ddp,
                             input_requires_grad=True,
                         )
                     )

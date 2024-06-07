@@ -5,14 +5,12 @@ from zipfile import ZipFile, ZIP_STORED
 
 from mala.common.parallelizer import printout
 
-try:
-    import horovod.torch as hvd
-except ModuleNotFoundError:
-    # Warning is thrown by Parameters class
-    pass
 import numpy as np
 import torch
+import torch.distributed as dist
 
+import mala
+from mala.common.parallelizer import get_rank
 from mala.common.parameters import ParametersRunning
 from mala.network.network import Network
 from mala.datahandling.data_scaler import DataScaler
@@ -188,55 +186,60 @@ class RunnerMLP(Runner):
             data is already present in the DataHandler object, it can be saved
             by setting.
         """
-        model_file = run_name + ".network.pth"
-        iscaler_file = run_name + ".iscaler.pkl"
-        oscaler_file = run_name + ".oscaler.pkl"
-        params_file = run_name + ".params.json"
-        if save_runner:
-            optimizer_file = run_name + ".optimizer.pth"
-        os.makedirs(save_path, exist_ok=True)
-        self.parameters_full.save(os.path.join(save_path, params_file))
-        if hasattr(self.network, "module"):
-            self.network.module.save_network(
-                os.path.join(save_path, model_file)
+        # If a model is trained via DDP, we need to make sure saving is only
+        # performed on rank 0.
+        if get_rank() == 0:
+            model_file = run_name + ".network.pth"
+            iscaler_file = run_name + ".iscaler.pkl"
+            oscaler_file = run_name + ".oscaler.pkl"
+            params_file = run_name + ".params.json"
+            if save_runner:
+                optimizer_file = run_name + ".optimizer.pth"
+            os.makedirs(save_path, exist_ok=True)
+            self.parameters_full.save(os.path.join(save_path, params_file))
+            if hasattr(self.network, "module"):
+                self.network.module.save_network(
+                    os.path.join(save_path, model_file)
+                )
+            else:
+                self.network.save_network(os.path.join(save_path, model_file))
+            self.data.input_data_scaler.save(os.path.join(save_path, iscaler_file))
+            self.data.output_data_scaler.save(
+                os.path.join(save_path, oscaler_file)
             )
-        else:
-            self.network.save_network(os.path.join(save_path, model_file))
-        self.data.input_data_scaler.save(os.path.join(save_path, iscaler_file))
-        self.data.output_data_scaler.save(
-            os.path.join(save_path, oscaler_file)
-        )
 
-        files = [model_file, iscaler_file, oscaler_file, params_file]
-        if save_runner:
-            files += [optimizer_file]
-        if zip_run:
-            if additional_calculation_data is not None:
-                additional_calculation_file = run_name + ".info.json"
-                if isinstance(additional_calculation_data, str):
-                    self.data.target_calculator.read_additional_calculation_data(
-                        additional_calculation_data
-                    )
-                    self.data.target_calculator.write_additional_calculation_data(
-                        os.path.join(save_path, additional_calculation_file)
-                    )
-                elif isinstance(additional_calculation_data, bool):
-                    if additional_calculation_data:
+            files = [model_file, iscaler_file, oscaler_file, params_file]
+            if save_runner:
+                files += [optimizer_file]
+            if zip_run:
+                if additional_calculation_data is not None:
+                    additional_calculation_file = run_name + ".info.json"
+                    if isinstance(additional_calculation_data, str):
+                        self.data.target_calculator.read_additional_calculation_data(
+                            additional_calculation_data
+                        )
                         self.data.target_calculator.write_additional_calculation_data(
                             os.path.join(
                                 save_path, additional_calculation_file
                             )
                         )
+                    elif isinstance(additional_calculation_data, bool):
+                        if additional_calculation_data:
+                            self.data.target_calculator.write_additional_calculation_data(
+                                os.path.join(
+                                    save_path, additional_calculation_file
+                                )
+                            )
 
-                files.append(additional_calculation_file)
-            zipfile_name = os.path.join(save_path, run_name + ".zip")
-            with ZipFile(
-                zipfile_name, "w", compression=ZIP_STORED,
-            ) as zip_obj:
-                for file in files:
-                    file_path = os.path.join(save_path, file)
-                    zip_obj.write(file_path, file)
-                    os.remove(file_path)
+                    files.append(additional_calculation_file)
+                zipfile_name = os.path.join(save_path, run_name + ".zip")
+                with ZipFile(
+                    zipfile_name, "w", compression=ZIP_STORED,
+                ) as zip_obj:
+                    for file in files:
+                        file_path = os.path.join(save_path, file)
+                        zip_obj.write(file_path, file)
+                        os.remove(file_path)
 
     @classmethod
     def load_run(
@@ -249,6 +252,7 @@ class RunnerMLP(Runner):
         prepare_data=False,
         load_with_mpi=None,
         load_with_gpu=None,
+        load_with_ddp=None,
     ):
         """
         Load a run.
@@ -276,7 +280,7 @@ class RunnerMLP(Runner):
             If True, the data will be loaded into memory. This is needed when
             continuing a model training.
 
-        load_with_mpi : bool
+        load_with_mpi : bool or None
             Can be used to actively enable/disable MPI during loading.
             Default is None, so that the MPI parameters set during
             training/saving of the model are not overwritten.
@@ -284,7 +288,7 @@ class RunnerMLP(Runner):
             MPI already has to be activated here, if it was not activated
             during training!
 
-        load_with_gpu : bool
+        load_with_gpu : bool or None
             Can be used to actively enable/disable GPU during loading.
             Default is None, so that the GPU parameters set during
             training/saving of the model are not overwritten.
@@ -292,6 +296,14 @@ class RunnerMLP(Runner):
             it is advised that GPU usage is activated here, if it was not
             activated during training. Can also be used to activate a CPU
             based inference, by setting it to False.
+
+        load_with_ddp : bool or None
+            Can be used to actively disable DDP (pytorch distributed
+            data parallel used for parallel training) during loading.
+            Default is None, which for loading a Trainer object will not
+            interfere with DDP settings. For Predictor and Tester class,
+            this command will automatically disable DDP during loading,
+            as inference is using MPI rather than DDP for parallelization.
 
         Return
         ------
@@ -335,7 +347,13 @@ class RunnerMLP(Runner):
                 path, run_name + ".params." + params_format
             )
 
-        loaded_params = Parameters.load_from_json(loaded_params)
+        # Neither Predictor nor Runner classes can work with DDP.
+        if cls is mala.Trainer:
+            loaded_params = Parameters.load_from_json(loaded_params)
+        else:
+            loaded_params = Parameters.load_from_json(
+                loaded_params, force_no_ddp=True
+            )
 
         # MPI has to be specified upon loading, in contrast to GPU.
         if load_with_mpi is not None:
@@ -534,13 +552,16 @@ class RunnerMLP(Runner):
         """
         Prepare the RunnerMLP to run the Network.
 
-        This includes e.g. horovod setup.
+        This includes e.g. ddp setup.
         """
-        # See if we want to use horovod.
-        if self.parameters_full.use_horovod:
+        # See if we want to use ddp.
+        if self.parameters_full.use_ddp:
             if self.parameters_full.use_gpu:
                 # We cannot use "printout" here because this is supposed
                 # to happen on every rank.
+                size = dist.get_world_size()
+                rank = dist.get_rank()
+                local_rank = int(os.environ.get("LOCAL_RANK"))
                 if self.parameters_full.verbosity >= 2:
                     print("size=", hvd.size(), "global_rank=", hvd.rank(),
                           "local_rank=", hvd.local_rank(), "device=",
@@ -893,13 +914,13 @@ class RunnerGraph(Runner):
                 if self.parameters_full.verbosity >= 2:
                     print(
                         "size=",
-                        hvd.size(),
+                        size,
                         "global_rank=",
-                        hvd.rank(),
+                        rank,
                         "local_rank=",
-                        hvd.local_rank(),
+                        local_rank,
                         "device=",
-                        torch.cuda.get_device_name(hvd.local_rank()),
+                        torch.cuda.get_device_name(local_rank),
                     )
                 # pin GPU to local rank
-                torch.cuda.set_device(hvd.local_rank())
+                torch.cuda.set_device(local_rank)

@@ -7,19 +7,13 @@ import os
 import pickle
 from time import sleep
 
-horovod_available = False
-try:
-    import horovod.torch as hvd
-
-    horovod_available = True
-except ModuleNotFoundError:
-    pass
 import numpy as np
 import torch
+import torch.distributed as dist
 
 from mala.common.parallelizer import (
     printout,
-    set_horovod_status,
+    set_ddp_status,
     set_mpi_status,
     get_rank,
     get_local_rank,
@@ -39,8 +33,13 @@ class ParametersBase(JSONSerializable):
     ):
         super(ParametersBase, self).__init__()
         self._configuration = {
+<<<<<<< HEAD
             "gpu": 0,
             "horovod": False,
+=======
+            "gpu": False,
+            "ddp": False,
+>>>>>>> 8f9fbbae0bc77761fa8de5024c8ba1506316c27b
             "mpi": False,
             "device": "cpu",
             "openpmd_configuration": {},
@@ -76,8 +75,8 @@ class ParametersBase(JSONSerializable):
     def _update_gpu(self, new_gpu):
         self._configuration["gpu"] = new_gpu
 
-    def _update_horovod(self, new_horovod):
-        self._configuration["horovod"] = new_horovod
+    def _update_ddp(self, new_ddp):
+        self._configuration["ddp"] = new_ddp
 
     def _update_mpi(self, new_mpi):
         self._configuration["mpi"] = new_mpi
@@ -693,10 +692,6 @@ class ParametersRunning(ParametersBase):
         validation loss has to plateau before the schedule takes effect).
         Default: 0.
 
-    use_compression : bool
-        If True and horovod is used, horovod compression will be used for
-        allreduce communication. This can improve performance.
-
     num_workers : int
         Number of workers to be used for data loading.
 
@@ -780,8 +775,70 @@ class ParametersRunning(ParametersBase):
         self.training_log_interval = 1000
         self.profiler_range = [1000, 2000]
 
-    def _update_horovod(self, new_horovod):
-        super(ParametersRunning, self)._update_horovod(new_horovod)
+    def _update_ddp(self, new_ddp):
+        super(ParametersRunning, self)._update_ddp(new_ddp)
+        self.during_training_metric = self.during_training_metric
+        self.after_before_training_metric = self.after_before_training_metric
+
+    @property
+    def during_training_metric(self):
+        """
+        Control the metric used during training.
+
+        Metric for evaluated on the validation set during training.
+        Default is "ldos", meaning that the regular loss on the LDOS will be
+        used as a metric. Possible options are "band_energy" and
+        "total_energy". For these, the band resp. total energy of the
+        validation snapshots will be calculated and compared to the provided
+        DFT results. Of these, the mean average error in eV/atom will be
+        calculated.
+        """
+        return self._during_training_metric
+
+    @during_training_metric.setter
+    def during_training_metric(self, value):
+        if value != "ldos":
+            if self._configuration["ddp"]:
+                raise Exception(
+                    "Currently, MALA can only operate with the "
+                    '"ldos" metric for ddp runs.'
+                )
+        self._during_training_metric = value
+
+    @property
+    def after_before_training_metric(self):
+        """
+        Get the metric used during training.
+
+        Metric for evaluated on the validation and test set before and after
+        training. Default is "LDOS", meaning that the regular loss on the LDOS
+        will be used as a metric. Possible options are "band_energy" and
+        "total_energy". For these, the band resp. total energy of the
+        validation snapshots will be calculated and compared to the provided
+        DFT results. Of these, the mean average error in eV/atom will be
+        calculated.
+        """
+        return self._after_before_training_metric
+
+    @after_before_training_metric.setter
+    def after_before_training_metric(self, value):
+        if value != "ldos":
+            if self._configuration["ddp"]:
+                raise Exception(
+                    "Currently, MALA can only operate with the "
+                    '"ldos" metric for ddp runs.'
+                )
+        self._after_before_training_metric = value
+
+    @during_training_metric.setter
+    def during_training_metric(self, value):
+        if value != "ldos":
+            if self._configuration["ddp"]:
+                raise Exception(
+                    "Currently, MALA can only operate with the "
+                    '"ldos" metric for ddp runs.'
+                )
+        self._during_training_metric = value
 
     @property
     def use_graphs(self):
@@ -1167,7 +1224,7 @@ class Parameters:
 
         # Properties
         self.use_gpu = False
-        self.use_horovod = False
+        self.use_ddp = False
         self.use_mpi = False
         self.verbosity = 1
         self.device = "cpu"
@@ -1267,32 +1324,36 @@ class Parameters:
         self.hyperparameters._update_gpu(self.use_gpu)
 
     @property
-    def use_horovod(self):
-        """Control whether or not horovod is used for parallel training."""
-        return self._use_horovod
+    def use_ddp(self):
+        """Control whether or not dd is used for parallel training."""
+        return self._use_ddp
 
-    @use_horovod.setter
-    def use_horovod(self, value):
-        if value is False:
-            self._use_horovod = False
-        else:
-            if horovod_available:
-                hvd.init()
-                # Invalidate, will be updated in setter.
-                set_horovod_status(value)
-                self.device = None
-                self._use_horovod = value
-                self.network._update_horovod(self.use_horovod)
-                self.descriptors._update_horovod(self.use_horovod)
-                self.targets._update_horovod(self.use_horovod)
-                self.data._update_horovod(self.use_horovod)
-                self.running._update_horovod(self.use_horovod)
-                self.hyperparameters._update_horovod(self.use_horovod)
-            else:
-                parallel_warn(
-                    "Horovod requested, but not installed found. "
-                    "MALA will operate without horovod only."
-                )
+    @use_ddp.setter
+    def use_ddp(self, value):
+        if value:
+            if self.verbosity > 1:
+                print("Initializing torch.distributed.")
+            # JOSHR:
+            # We start up torch distributed here. As is fairly standard
+            # convention, we get the rank and world size arguments via
+            # environment variables (RANK, WORLD_SIZE). In addition to
+            # those variables, LOCAL_RANK, MASTER_ADDR and MASTER_PORT
+            # should be set.
+            rank = int(os.environ.get("RANK"))
+            world_size = int(os.environ.get("WORLD_SIZE"))
+
+            dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+        set_ddp_status(value)
+        # Invalidate, will be updated in setter.
+        self.device = None
+        self._use_ddp = value
+        self.network._update_ddp(self.use_ddp)
+        self.descriptors._update_ddp(self.use_ddp)
+        self.targets._update_ddp(self.use_ddp)
+        self.data._update_ddp(self.use_ddp)
+        self.running._update_ddp(self.use_ddp)
+        self.hyperparameters._update_ddp(self.use_ddp)
 
     @property
     def device(self):
@@ -1315,7 +1376,7 @@ class Parameters:
 
     @property
     def use_mpi(self):
-        """Control whether or not horovod is used for parallel training."""
+        """Control whether or not MPI is used for paralle inference."""
         return self._use_mpi
 
     @use_mpi.setter
@@ -1444,7 +1505,7 @@ class Parameters:
                 if member[0][0] != "_":
                     if isinstance(member[1], ParametersBase):
                         # All the subclasses have to provide this function.
-                        member[1]: ParametersBase
+                        member[1]: ParametersBase # type: ignore
                         json_dict[member[0]] = member[1].to_json()
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(json_dict, f, ensure_ascii=False, indent=4)
@@ -1514,7 +1575,9 @@ class Parameters:
         self.hyperparameters._update_device(device_temp)
 
     @classmethod
-    def load_from_file(cls, file, save_format="json", no_snapshots=False):
+    def load_from_file(
+        cls, file, save_format="json", no_snapshots=False, force_no_ddp=False
+    ):
         """
         Load a Parameters object from a file.
 
@@ -1569,7 +1632,10 @@ class Parameters:
                     not isinstance(json_dict[key], dict)
                     or key == "openpmd_configuration"
                 ):
-                    setattr(loaded_parameters, key, json_dict[key])
+                    if key == "use_ddp" and force_no_ddp is True:
+                        setattr(loaded_parameters, key, False)
+                    else:
+                        setattr(loaded_parameters, key, json_dict[key])
             if no_snapshots is True:
                 loaded_parameters.data.snapshot_directories_list = []
         else:
@@ -1602,7 +1668,7 @@ class Parameters:
         )
 
     @classmethod
-    def load_from_json(cls, file, no_snapshots=False):
+    def load_from_json(cls, file, no_snapshots=False, force_no_ddp=False):
         """
         Load a Parameters object from a json file.
 
@@ -1622,5 +1688,8 @@ class Parameters:
 
         """
         return Parameters.load_from_file(
-            file, save_format="json", no_snapshots=no_snapshots
+            file,
+            save_format="json",
+            no_snapshots=no_snapshots,
+            force_no_ddp=force_no_ddp,
         )
