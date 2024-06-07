@@ -873,6 +873,7 @@ class DataHandlerMLP(DataHandler):
                     self.descriptor_calculator,
                     self.target_calculator,
                     self.use_horovod,
+                    snapshot_frac=self.parameters.snapshot_frac,
                 )
             )
             self.validation_data_sets.append(

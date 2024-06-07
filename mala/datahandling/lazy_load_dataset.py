@@ -64,6 +64,7 @@ class LazyLoadDataset(Dataset):
         target_calculator,
         use_horovod,
         input_requires_grad=False,
+        snapshot_frac=1.0,
     ):
         self.snapshot_list = []
         self.input_dimension = input_dimension
@@ -83,6 +84,7 @@ class LazyLoadDataset(Dataset):
         self.use_horovod = use_horovod
         self.return_outputs_directly = False
         self.input_requires_grad = input_requires_grad
+        self.snapshot_frac = snapshot_frac
 
     @property
     def return_outputs_directly(self):
@@ -112,7 +114,8 @@ class LazyLoadDataset(Dataset):
         """
         self.snapshot_list.append(snapshot)
         self.number_of_snapshots += 1
-        self.total_size += snapshot.grid_size
+        grid_size = int(snapshot.grid_size*self.snapshot_frac)
+        self.total_size += grid_size
 
     def mix_datasets(self):
         """
@@ -138,20 +141,22 @@ class LazyLoadDataset(Dataset):
         """
         # Load the data into RAM.
         if self.snapshot_list[file_index].snapshot_type == "numpy":
-            self.input_data = self.descriptor_calculator.read_from_numpy_file(
+            loaded_input = self.descriptor_calculator.read_from_numpy_file(
                 os.path.join(
                     self.snapshot_list[file_index].input_npy_directory,
                     self.snapshot_list[file_index].input_npy_file,
                 ),
                 units=self.snapshot_list[file_index].input_units,
             )
-            self.output_data = self.target_calculator.read_from_numpy_file(
+            self.input_data = loaded_input
+            loaded_output = self.target_calculator.read_from_numpy_file(
                 os.path.join(
                     self.snapshot_list[file_index].output_npy_directory,
                     self.snapshot_list[file_index].output_npy_file,
                 ),
                 units=self.snapshot_list[file_index].output_units,
             )
+            self.output_data = loaded_output 
 
         elif self.snapshot_list[file_index].snapshot_type == "openpmd":
             self.input_data = (
@@ -173,6 +178,11 @@ class LazyLoadDataset(Dataset):
         self.input_data = self.input_data.reshape(
             [self.snapshot_list[file_index].grid_size, self.input_dimension]
         )
+        if self.snapshot_frac < 1.0:
+            n_points = int(self.input_data.shape[0]*self.snapshot_frac)
+            perm = torch.randperm(self.input_data.shape[0])[:n_points]
+            self.input_data = self.input_data[perm]
+        
         if self.input_data.dtype != DEFAULT_NP_DATA_DTYPE:
             self.input_data = self.input_data.astype(DEFAULT_NP_DATA_DTYPE)
         self.input_data = torch.from_numpy(self.input_data).float()
@@ -182,6 +192,8 @@ class LazyLoadDataset(Dataset):
         self.output_data = self.output_data.reshape(
             [self.snapshot_list[file_index].grid_size, self.output_dimension]
         )
+        if self.snapshot_frac < 1.0:
+            self.output_data = self.output_data[perm]
         if self.return_outputs_directly is False:
             self.output_data = np.array(self.output_data)
             if self.output_data.dtype != DEFAULT_NP_DATA_DTYPE:
@@ -199,27 +211,29 @@ class LazyLoadDataset(Dataset):
         index_in_file = idx
         if is_slice:
             for i in range(len(self.snapshot_list)):
-                if index_in_file - self.snapshot_list[i].grid_size <= 0:
+                n_points = int(self.snapshot_list[i].grid_size*self.snapshot_frac)
+                if index_in_file - n_points <= 0:
                     file_index = i
 
                     # From the end of previous file to beginning of new.
                     if (
-                        index_in_file == self.snapshot_list[i].grid_size
+                        index_in_file == n_points
                         and is_start
                     ):
                         file_index = i + 1
                         index_in_file = 0
                     break
                 else:
-                    index_in_file -= self.snapshot_list[i].grid_size
+                    index_in_file -= n_points
             return file_index, index_in_file
         else:
             for i in range(len(self.snapshot_list)):
-                if index_in_file - self.snapshot_list[i].grid_size < 0:
+                n_points = int(self.snapshot_list[i].grid_size*self.snapshot_frac)
+                if index_in_file - n_points < 0:
                     file_index = i
                     break
                 else:
-                    index_in_file -= self.snapshot_list[i].grid_size
+                    index_in_file -= n_points
             return file_index, index_in_file
 
     def __getitem__(self, idx):
@@ -263,9 +277,9 @@ class LazyLoadDataset(Dataset):
             # the stop index will point to the wrong file.
             if file_index_start != file_index_stop:
                 if index_in_file_stop == 0:
-                    index_in_file_stop = self.snapshot_list[
+                    index_in_file_stop = int(self.snapshot_list[
                         file_index_stop
-                    ].grid_size
+                    ].grid_size*self.snapshot_frac)
                 else:
                     raise Exception(
                         "Lazy loading currently only supports "
