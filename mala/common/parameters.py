@@ -33,13 +33,8 @@ class ParametersBase(JSONSerializable):
     ):
         super(ParametersBase, self).__init__()
         self._configuration = {
-<<<<<<< HEAD
             "gpu": 0,
-            "horovod": False,
-=======
-            "gpu": False,
             "ddp": False,
->>>>>>> 8f9fbbae0bc77761fa8de5024c8ba1506316c27b
             "mpi": False,
             "device": "cpu",
             "openpmd_configuration": {},
