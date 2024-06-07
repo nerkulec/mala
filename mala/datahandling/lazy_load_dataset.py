@@ -81,11 +81,8 @@ class LazyLoadDataset(Dataset):
         self.use_ddp = use_ddp
         self.return_outputs_directly = False
         self.input_requires_grad = input_requires_grad
-<<<<<<< HEAD
         self.snapshot_frac = snapshot_frac
-=======
         self.device = device
->>>>>>> 8f9fbbae0bc77761fa8de5024c8ba1506316c27b
 
     @property
     def return_outputs_directly(self):
