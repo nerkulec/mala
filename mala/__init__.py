@@ -29,8 +29,15 @@ from .datahandling import (
 )
 from .network import (
     Network,
+    Runner,
+    RunnerMLP,
+    RunnerGraph,
     Tester,
+    TesterMLP,
+    TesterGraph,
     Trainer,
+    TrainerMLP,
+    TrainerGNN,
     HyperOpt,
     HyperOptOptuna,
     HyperOptNASWOT,

@@ -19,6 +19,7 @@ from mala import Parameters
 
 from tqdm.auto import tqdm, trange
 
+
 class Runner:
     def _calculate_energy_errors(
         self, actual_outputs, predicted_outputs, energy_types, snapshot_number
@@ -26,26 +27,40 @@ class Runner:
         self.data.target_calculator.read_additional_calculation_data(
             self.data.get_snapshot_calculation_output(snapshot_number)
         )
-            
+
         errors = {}
         fe_dft = self.data.target_calculator.fermi_energy_dft
         fe_actual = None
         fe_predicted = None
         try:
-            fe_actual = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(actual_outputs)
+            fe_actual = (
+                self.data.target_calculator.get_self_consistent_fermi_energy(
+                    actual_outputs
+                )
+            )
         except ValueError:
-            errors = {energy_type: float("inf") for energy_type in energy_types}
-            printout("CAUTION! LDOS ground truth is so wrong that the "
-                     "estimation of the self consistent Fermi energy fails.")
+            errors = {
+                energy_type: float("inf") for energy_type in energy_types
+            }
+            printout(
+                "CAUTION! LDOS ground truth is so wrong that the "
+                "estimation of the self consistent Fermi energy fails."
+            )
             return errors
         try:
-            fe_predicted = self.data.target_calculator. \
-                get_self_consistent_fermi_energy(predicted_outputs)
+            fe_predicted = (
+                self.data.target_calculator.get_self_consistent_fermi_energy(
+                    predicted_outputs
+                )
+            )
         except ValueError:
-            errors = {energy_type: float("inf") for energy_type in energy_types}
-            printout("CAUTION! LDOS prediction is so wrong that the "
-                     "estimation of the self consistent Fermi energy fails.")
+            errors = {
+                energy_type: float("inf") for energy_type in energy_types
+            }
+            printout(
+                "CAUTION! LDOS prediction is so wrong that the "
+                "estimation of the self consistent Fermi energy fails."
+            )
             return errors
         for energy_type in energy_types:
             if energy_type == "fermi_energy":
@@ -62,28 +77,35 @@ class Runner:
                     be_predicted = self.data.target_calculator.get_band_energy(
                         predicted_outputs, fermi_energy=fe_predicted
                     )
-                    be_error = np.abs(be_predicted - be_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    be_error = np.abs(be_predicted - be_actual) * (
+                        1000 / len(self.data.target_calculator.atoms)
+                    )
                     errors["band_energy"] = be_error
                 except ValueError:
                     errors["band_energy"] = float("inf")
             elif energy_type == "band_energy_dft_fe":
                 try:
-                    be_predicted_dft_fe = self.data.target_calculator.get_band_energy(
-                        predicted_outputs, fermi_energy=fe_dft
+                    be_predicted_dft_fe = (
+                        self.data.target_calculator.get_band_energy(
+                            predicted_outputs, fermi_energy=fe_dft
+                        )
                     )
-                    be_error_dft_fe = np.abs(be_predicted_dft_fe - be_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    be_error_dft_fe = np.abs(
+                        be_predicted_dft_fe - be_actual
+                    ) * (1000 / len(self.data.target_calculator.atoms))
                     errors["band_energy_dft_fe"] = be_error_dft_fe
                 except ValueError:
                     errors["band_energy_dft_fe"] = float("inf")
             elif energy_type == "band_energy_actual_fe":
                 try:
-                    be_predicted_actual_fe = self.data.target_calculator.get_band_energy(
-                        predicted_outputs, fermi_energy=fe_actual
+                    be_predicted_actual_fe = (
+                        self.data.target_calculator.get_band_energy(
+                            predicted_outputs, fermi_energy=fe_actual
+                        )
                     )
-                    be_error_actual_fe = np.abs(be_predicted_actual_fe - be_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    be_error_actual_fe = np.abs(
+                        be_predicted_actual_fe - be_actual
+                    ) * (1000 / len(self.data.target_calculator.atoms))
                     errors["band_energy_actual_fe"] = be_error_actual_fe
                 except ValueError:
                     errors["band_energy_actual_fe"] = float("inf")
@@ -92,37 +114,50 @@ class Runner:
                     te_actual = self.data.target_calculator.get_total_energy(
                         ldos_data=actual_outputs, fermi_energy=fe_actual
                     )
-                    te_predicted = self.data.target_calculator.get_total_energy(
-                        ldos_data=predicted_outputs, fermi_energy=fe_predicted
+                    te_predicted = (
+                        self.data.target_calculator.get_total_energy(
+                            ldos_data=predicted_outputs,
+                            fermi_energy=fe_predicted,
+                        )
                     )
-                    te_error = np.abs(te_predicted - te_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    te_error = np.abs(te_predicted - te_actual) * (
+                        1000 / len(self.data.target_calculator.atoms)
+                    )
                     errors["total_energy"] = te_error
                 except ValueError:
                     errors["total_energy"] = float("inf")
             elif energy_type == "total_energy_dft_fe":
                 try:
-                    te_predicted_dft_fe = self.data.target_calculator.get_total_energy(
-                        predicted_outputs, fermi_energy=fe_dft
+                    te_predicted_dft_fe = (
+                        self.data.target_calculator.get_total_energy(
+                            predicted_outputs, fermi_energy=fe_dft
+                        )
                     )
-                    te_error_dft_fe = np.abs(te_predicted_dft_fe - te_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    te_error_dft_fe = np.abs(
+                        te_predicted_dft_fe - te_actual
+                    ) * (1000 / len(self.data.target_calculator.atoms))
                     errors["total_energy_dft_fe"] = te_error_dft_fe
                 except ValueError:
                     errors["total_energy_dft_fe"] = float("inf")
             elif energy_type == "total_energy_actual_fe":
                 try:
-                    te_predicted_actual_fe = self.data.target_calculator.get_total_energy(
-                        predicted_outputs, fermi_energy=fe_actual
+                    te_predicted_actual_fe = (
+                        self.data.target_calculator.get_total_energy(
+                            predicted_outputs, fermi_energy=fe_actual
+                        )
                     )
-                    te_error_actual_fe = np.abs(te_predicted_actual_fe - te_actual) * \
-                        (1000 / len(self.data.target_calculator.atoms))
+                    te_error_actual_fe = np.abs(
+                        te_predicted_actual_fe - te_actual
+                    ) * (1000 / len(self.data.target_calculator.atoms))
                     errors["total_energy_actual_fe"] = te_error_actual_fe
                 except ValueError:
                     errors["total_energy_actual_fe"] = float("inf")
             else:
-                raise Exception(f"Invalid energy type ({energy_type}) requested.")
+                raise Exception(
+                    f"Invalid energy type ({energy_type}) requested."
+                )
         return errors
+
 
 class RunnerMLP(Runner):
     """
@@ -203,7 +238,9 @@ class RunnerMLP(Runner):
                 )
             else:
                 self.network.save_network(os.path.join(save_path, model_file))
-            self.data.input_data_scaler.save(os.path.join(save_path, iscaler_file))
+            self.data.input_data_scaler.save(
+                os.path.join(save_path, iscaler_file)
+            )
             self.data.output_data_scaler.save(
                 os.path.join(save_path, oscaler_file)
             )
@@ -234,7 +271,9 @@ class RunnerMLP(Runner):
                     files.append(additional_calculation_file)
                 zipfile_name = os.path.join(save_path, run_name + ".zip")
                 with ZipFile(
-                    zipfile_name, "w", compression=ZIP_STORED,
+                    zipfile_name,
+                    "w",
+                    compression=ZIP_STORED,
                 ) as zip_obj:
                     for file in files:
                         file_path = os.path.join(save_path, file)
@@ -554,21 +593,6 @@ class RunnerMLP(Runner):
 
         This includes e.g. ddp setup.
         """
-        # See if we want to use ddp.
-        if self.parameters_full.use_ddp:
-            if self.parameters_full.use_gpu:
-                # We cannot use "printout" here because this is supposed
-                # to happen on every rank.
-                size = dist.get_world_size()
-                rank = dist.get_rank()
-                local_rank = int(os.environ.get("LOCAL_RANK"))
-                if self.parameters_full.verbosity >= 2:
-                    print("size=", hvd.size(), "global_rank=", hvd.rank(),
-                          "local_rank=", hvd.local_rank(), "device=",
-                          torch.cuda.get_device_name(hvd.local_rank()))
-                # pin GPU to local rank
-                torch.cuda.set_device(hvd.local_rank())
-
 
 
 class RunnerGraph(Runner):
@@ -596,8 +620,14 @@ class RunnerGraph(Runner):
         self.data = data
         self.__prepare_to_run()
 
-    def save_run(self, run_name, save_path="./", zip_run=True,
-                 save_runner=False, additional_calculation_data=None):
+    def save_run(
+        self,
+        run_name,
+        save_path="./",
+        zip_run=True,
+        save_runner=False,
+        additional_calculation_data=None,
+    ):
         """
         Save the current run.
 
@@ -632,44 +662,57 @@ class RunnerGraph(Runner):
         oscaler_file = run_name + ".oscaler.pkl"
         params_file = run_name + ".params.json"
         if save_runner:
-            decoder_optimizer_file = run_name+".decoder_optimizer.pth"
-            encoder_optimizer_file = run_name+".encoder_optimizer.pth"
+            decoder_optimizer_file = run_name + ".decoder_optimizer.pth"
+            encoder_optimizer_file = run_name + ".encoder_optimizer.pth"
 
         self.parameters_full.save(os.path.join(save_path, params_file))
         self.network.save_network(os.path.join(save_path, model_file))
         self.data.input_data_scaler.save(os.path.join(save_path, iscaler_file))
-        self.data.output_data_scaler.save(os.path.join(save_path,
-                                                       oscaler_file))
+        self.data.output_data_scaler.save(
+            os.path.join(save_path, oscaler_file)
+        )
 
         files = [model_file, iscaler_file, oscaler_file, params_file]
         if save_runner:
             files += [decoder_optimizer_file, encoder_optimizer_file]
         if zip_run:
             if additional_calculation_data is not None:
-                additional_calculation_file = run_name+".info.json"
+                additional_calculation_file = run_name + ".info.json"
                 if isinstance(additional_calculation_data, str):
-                    self.data.target_calculator.\
-                        read_additional_calculation_data(additional_calculation_data)
-                    self.data.target_calculator.\
-                        write_additional_calculation_data(os.path.join(save_path,
-                                                          additional_calculation_file))
+                    self.data.target_calculator.read_additional_calculation_data(
+                        additional_calculation_data
+                    )
+                    self.data.target_calculator.write_additional_calculation_data(
+                        os.path.join(save_path, additional_calculation_file)
+                    )
                 elif isinstance(additional_calculation_data, bool):
                     if additional_calculation_data:
-                        self.data.target_calculator. \
-                            write_additional_calculation_data(os.path.join(save_path,
-                                                              additional_calculation_file))
+                        self.data.target_calculator.write_additional_calculation_data(
+                            os.path.join(
+                                save_path, additional_calculation_file
+                            )
+                        )
 
                 files.append(additional_calculation_file)
-            with ZipFile(os.path.join(save_path, run_name+".zip"), 'w',
-                         compression=ZIP_STORED) as zip_obj:
+            with ZipFile(
+                os.path.join(save_path, run_name + ".zip"),
+                "w",
+                compression=ZIP_STORED,
+            ) as zip_obj:
                 for file in files:
                     zip_obj.write(os.path.join(save_path, file), file)
                     os.remove(os.path.join(save_path, file))
 
     @classmethod
-    def load_run(cls, run_name, path="./", zip_run=True,
-                 params_format="json", load_runner=True,
-                 prepare_data=False):
+    def load_run(
+        cls,
+        run_name,
+        path="./",
+        zip_run=True,
+        params_format="json",
+        load_runner=True,
+        prepare_data=False,
+    ):
         """
         Load a run.
 
@@ -716,11 +759,11 @@ class RunnerGraph(Runner):
             loaded_network = run_name + ".network.pth"
             loaded_iscaler = run_name + ".iscaler.pkl"
             loaded_oscaler = run_name + ".oscaler.pkl"
-            loaded_params = run_name + ".params."+params_format
+            loaded_params = run_name + ".params." + params_format
             loaded_info = run_name + ".info.json"
 
             zip_path = os.path.join(path, run_name + ".zip")
-            with ZipFile(zip_path, 'r') as zip_obj:
+            with ZipFile(zip_path, "r") as zip_obj:
                 loaded_params = zip_obj.open(loaded_params)
                 loaded_network = zip_obj.open(loaded_network)
                 loaded_iscaler = zip_obj.open(loaded_iscaler)
@@ -734,40 +777,49 @@ class RunnerGraph(Runner):
             loaded_network = os.path.join(path, run_name + ".network.pth")
             loaded_iscaler = os.path.join(path, run_name + ".iscaler.pkl")
             loaded_oscaler = os.path.join(path, run_name + ".oscaler.pkl")
-            loaded_params = os.path.join(path, run_name +
-                                         ".params."+params_format)
+            loaded_params = os.path.join(
+                path, run_name + ".params." + params_format
+            )
 
         loaded_params = Parameters.load_from_json(loaded_params)
-        loaded_network = Network.load_from_file(loaded_params,
-                                                loaded_network)
+        loaded_network = Network.load_from_file(loaded_params, loaded_network)
         loaded_iscaler = DataScaler.load_from_file(loaded_iscaler)
         loaded_oscaler = DataScaler.load_from_file(loaded_oscaler)
-        new_datahandler = DataHandler(loaded_params,
-                                      input_data_scaler=loaded_iscaler,
-                                      output_data_scaler=loaded_oscaler,
-                                      clear_data=(not prepare_data))
+        new_datahandler = DataHandler(
+            loaded_params,
+            input_data_scaler=loaded_iscaler,
+            output_data_scaler=loaded_oscaler,
+            clear_data=(not prepare_data),
+        )
         if loaded_info is not None:
-            new_datahandler.target_calculator.\
-                read_additional_calculation_data(loaded_info,
-                                                 data_type="json")
+            new_datahandler.target_calculator.read_additional_calculation_data(
+                loaded_info, data_type="json"
+            )
 
         if prepare_data:
             new_datahandler.prepare_data(reparametrize_scaler=False)
 
         if load_runner:
             if zip_run is True:
-                with ZipFile(zip_path, 'r') as zip_obj:
+                with ZipFile(zip_path, "r") as zip_obj:
                     loaded_runner = run_name + ".optimizer.pth"
                     if loaded_runner in zip_obj.namelist():
                         loaded_runner = zip_obj.open(loaded_runner)
             else:
                 loaded_runner = os.path.join(run_name + ".optimizer.pth")
 
-            loaded_runner = cls._load_from_run(loaded_params, loaded_network,
-                                               new_datahandler,
-                                               file=loaded_runner)
-            return loaded_params, loaded_network, new_datahandler, \
-                   loaded_runner
+            loaded_runner = cls._load_from_run(
+                loaded_params,
+                loaded_network,
+                new_datahandler,
+                file=loaded_runner,
+            )
+            return (
+                loaded_params,
+                loaded_network,
+                new_datahandler,
+                loaded_runner,
+            )
         else:
             return loaded_params, loaded_network, new_datahandler
 
@@ -795,14 +847,18 @@ class RunnerGraph(Runner):
             If True, the model exists.
         """
         if zip_run is True:
-            return os.path.isfile(run_name+".zip")
+            return os.path.isfile(run_name + ".zip")
         else:
             network_name = run_name + ".network.pth"
             iscaler_name = run_name + ".iscaler.pkl"
             oscaler_name = run_name + ".oscaler.pkl"
-            param_name = run_name + ".params."+params_format
-            return all(map(os.path.isfile, [iscaler_name, oscaler_name, param_name,
-                                            network_name]))
+            param_name = run_name + ".params." + params_format
+            return all(
+                map(
+                    os.path.isfile,
+                    [iscaler_name, oscaler_name, param_name, network_name],
+                )
+            )
 
     @classmethod
     def _load_from_run(cls, params, network, data, file=None):
@@ -812,8 +868,12 @@ class RunnerGraph(Runner):
         return loaded_runner
 
     def _forward_entire_snapshot(
-        self, snapshot_number, data_set, data_set_type,
-        number_of_batches_per_snapshot=0, batch_size=0
+        self,
+        snapshot_number,
+        data_set,
+        data_set_type,
+        number_of_batches_per_snapshot=0,
+        batch_size=0,
     ):
         """
         Forward a snapshot through the network, get actual/predicted output.
@@ -838,40 +898,64 @@ class RunnerGraph(Runner):
         predicted_outputs : numpy.ndarray
             Precicted outputs for snapshot.
         """
-        grid_size = self.data.parameters.snapshot_directories_list[snapshot_number].grid_size
+        grid_size = self.data.parameters.snapshot_directories_list[
+            snapshot_number
+        ].grid_size
 
         # TODO: check if this makes sense
         actual_outputs = np.zeros((grid_size, self.data.output_dimension))
         for i in range(0, data_set.n_ldos_batches):
-            graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches + i]
+            graph_ions, graph_grid = data_set[
+                snapshot_number * data_set.n_ldos_batches + i
+            ]
 
-            targets = graph_grid.ndata['target']
-            targets_grid = targets[graph_ions.num_nodes():]
-            targets_grid = targets_grid.to('cpu')
-            targets_grid_scaled = self.data.output_data_scaler.inverse_transform(
-                targets_grid, as_numpy=True
+            targets = graph_grid.ndata["target"]
+            targets_grid = targets[graph_ions.num_nodes() :]
+            targets_grid = targets_grid.to("cpu")
+            targets_grid_scaled = (
+                self.data.output_data_scaler.inverse_transform(
+                    targets_grid, as_numpy=True
+                )
             )
             i_start = i * data_set.ldos_batch_size
             i_end = (i + 1) * data_set.ldos_batch_size
             actual_outputs[i_start:i_end, :] = targets_grid_scaled
-            
-        graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches]
+
+        graph_ions, graph_grid = data_set[
+            snapshot_number * data_set.n_ldos_batches
+        ]
         embedding = self._compute_embedding(graph_ions, graph_grid)
         predicted_outputs = np.zeros((grid_size, self.data.output_dimension))
-        for i in trange(0, data_set.n_ldos_batches, desc="Predicting LDOS in batches", disable=self.parameters.verbosity < 1):
-            graph_ions, graph_grid = data_set[snapshot_number * data_set.n_ldos_batches + i]
+        for i in trange(
+            0,
+            data_set.n_ldos_batches,
+            desc="Predicting LDOS in batches",
+            disable=self.parameters.verbosity < 1,
+        ):
+            graph_ions, graph_grid = data_set[
+                snapshot_number * data_set.n_ldos_batches + i
+            ]
 
             graph_grid = graph_grid.to(
                 self.parameters._configuration["device"], non_blocking=True
             )
 
-            predicted_outputs[i * data_set.ldos_batch_size:(i + 1) * data_set.ldos_batch_size, :] = \
-                self.network.predict_ldos(embedding, graph_ions, graph_grid).to('cpu')
-        
+            predicted_outputs[
+                i
+                * data_set.ldos_batch_size : (i + 1)
+                * data_set.ldos_batch_size,
+                :,
+            ] = self.network.predict_ldos(
+                embedding, graph_ions, graph_grid
+            ).to(
+                "cpu"
+            )
+
         # Restricting the actual quantities to physical meaningful values,
         # i.e. restricting the (L)DOS to positive values.
-        predicted_outputs = self.data.target_calculator.\
-            restrict_data(predicted_outputs)
+        predicted_outputs = self.data.target_calculator.restrict_data(
+            predicted_outputs
+        )
 
         # It could be that other operations will be happening with the data
         # set, so it's best to reset it.

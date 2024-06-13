@@ -20,7 +20,11 @@ from mala.targets.target import Target
 from mala.descriptors.descriptor import Descriptor
 
 from mala.common.parallelizer import printout, barrier
-from mala.common.parameters import Parameters, ParametersData, DEFAULT_NP_DATA_DTYPE
+from mala.common.parameters import (
+    Parameters,
+    ParametersData,
+    DEFAULT_NP_DATA_DTYPE,
+)
 
 from mala.datahandling.data_scaler import DataScaler
 from mala.datahandling.snapshot import Snapshot
@@ -48,16 +52,21 @@ class DataHandler(ABC):
         Used to do unit conversion on output data. If None, then one will
         be created by this class.
     """
-    def __new__(cls, params: Parameters, *args, **kwargs):        
+
+    def __new__(cls, params: Parameters, *args, **kwargs):
         data_handler = None
 
         # Check if we're accessing through base class.
         # If not, we need to return the correct object directly.
         if cls == DataHandler:
             if params.data.use_graph_data_set:
-                data_handler = super(DataHandler, DataHandlerGraph).__new__(DataHandlerGraph)
+                data_handler = super(DataHandler, DataHandlerGraph).__new__(
+                    DataHandlerGraph
+                )
             else:
-                data_handler = super(DataHandler, DataHandlerMLP).__new__(DataHandlerMLP)
+                data_handler = super(DataHandler, DataHandlerMLP).__new__(
+                    DataHandlerMLP
+                )
 
             if data_handler is None:
                 raise Exception("Unsupported dataset type.")
@@ -66,10 +75,14 @@ class DataHandler(ABC):
 
         return data_handler
 
-    def __init__(self, parameters: Parameters, target_calculator=None,
-                 descriptor_calculator=None):
+    def __init__(
+        self,
+        parameters: Parameters,
+        target_calculator=None,
+        descriptor_calculator=None,
+    ):
         self.parameters: ParametersData = parameters.data
-        self.use_horovod = parameters.use_horovod
+        self.use_ddp = parameters.use_ddp
 
         # Calculators used to parse data from compatible files.
         self.target_calculator = target_calculator
@@ -118,11 +131,18 @@ class DataHandler(ABC):
     # Adding/Deleting data
     ########################
 
-    def add_snapshot(self, input_file, input_directory,
-                     output_file, output_directory,
-                     add_snapshot_as,
-                     output_units="1/(eV*A^3)", input_units="None",
-                     calculation_output_file="", snapshot_type="numpy"):
+    def add_snapshot(
+        self,
+        input_file,
+        input_directory,
+        output_file,
+        output_directory,
+        add_snapshot_as,
+        output_units="1/(eV*A^3)",
+        input_units="None",
+        calculation_output_file="",
+        snapshot_type="numpy",
+    ):
         """
         Add a snapshot to the data pipeline.
 
@@ -161,13 +181,17 @@ class DataHandler(ABC):
             Either "numpy" or "openpmd" based on what kind of files you
             want to operate on.
         """
-        snapshot = Snapshot(input_file, input_directory,
-                            output_file, output_directory,
-                            add_snapshot_as,
-                            input_units=input_units,
-                            output_units=output_units,
-                            calculation_output=calculation_output_file,
-                            snapshot_type=snapshot_type)
+        snapshot = Snapshot(
+            input_file,
+            input_directory,
+            output_file,
+            output_directory,
+            add_snapshot_as,
+            input_units=input_units,
+            output_units=output_units,
+            calculation_output=calculation_output_file,
+            snapshot_type=snapshot_type,
+        )
         self.parameters.snapshot_directories_list.append(snapshot)
 
     def clear_data(self):
@@ -196,18 +220,28 @@ class DataHandler(ABC):
             # Descriptors.
             ####################
 
-            printout("Checking descriptor file ", snapshot.input_npy_file,
-                     "at", snapshot.input_npy_directory, min_verbosity=3)
+            printout(
+                "Checking descriptor file ",
+                snapshot.input_npy_file,
+                "at",
+                snapshot.input_npy_directory,
+                min_verbosity=3,
+            )
             if snapshot.snapshot_type == "numpy":
-                tmp_dimension = self.descriptor_calculator. \
-                    read_dimensions_from_numpy_file(
-                    os.path.join(snapshot.input_npy_directory,
-                                 snapshot.input_npy_file))
+                tmp_dimension = (
+                    self.descriptor_calculator.read_dimensions_from_numpy_file(
+                        os.path.join(
+                            snapshot.input_npy_directory,
+                            snapshot.input_npy_file,
+                        )
+                    )
+                )
             elif snapshot.snapshot_type == "openpmd":
-                tmp_dimension = self.descriptor_calculator. \
-                    read_dimensions_from_openpmd_file(
-                    os.path.join(snapshot.input_npy_directory,
-                                 snapshot.input_npy_file))
+                tmp_dimension = self.descriptor_calculator.read_dimensions_from_openpmd_file(
+                    os.path.join(
+                        snapshot.input_npy_directory, snapshot.input_npy_file
+                    )
+                )
             else:
                 raise Exception("Unknown snapshot file type.")
 
@@ -224,24 +258,38 @@ class DataHandler(ABC):
                     self.grid_size = np.prod(self.grid_dimension)
             else:
                 if self.input_dimension != tmp_input_dimension:
-                    raise Exception("Invalid snapshot entered at ", snapshot.
-                                    input_npy_file)
+                    raise Exception(
+                        "Invalid snapshot entered at ", snapshot.input_npy_file
+                    )
             ####################
             # Targets.
             ####################
 
-            printout("Checking targets file ", snapshot.output_npy_file, "at",
-                     snapshot.output_npy_directory, min_verbosity=3)
+            printout(
+                "Checking targets file ",
+                snapshot.output_npy_file,
+                "at",
+                snapshot.output_npy_directory,
+                min_verbosity=3,
+            )
             if snapshot.snapshot_type == "numpy":
-                tmp_dimension = self.target_calculator. \
-                    read_dimensions_from_numpy_file(
-                    os.path.join(snapshot.output_npy_directory,
-                                 snapshot.output_npy_file))
+                tmp_dimension = (
+                    self.target_calculator.read_dimensions_from_numpy_file(
+                        os.path.join(
+                            snapshot.output_npy_directory,
+                            snapshot.output_npy_file,
+                        )
+                    )
+                )
             elif snapshot.snapshot_type == "openpmd":
-                tmp_dimension = self.target_calculator. \
-                    read_dimensions_from_openpmd_file(
-                    os.path.join(snapshot.output_npy_directory,
-                                 snapshot.output_npy_file))
+                tmp_dimension = (
+                    self.target_calculator.read_dimensions_from_openpmd_file(
+                        os.path.join(
+                            snapshot.output_npy_directory,
+                            snapshot.output_npy_file,
+                        )
+                    )
+                )
             else:
                 raise Exception("Unknown snapshot file type.")
 
@@ -252,8 +300,10 @@ class DataHandler(ABC):
                 self.output_dimension = tmp_output_dimension
             else:
                 if self.output_dimension != tmp_output_dimension:
-                    raise Exception("Invalid snapshot entered at ", snapshot.
-                                    output_npy_file)
+                    raise Exception(
+                        "Invalid snapshot entered at ",
+                        snapshot.output_npy_file,
+                    )
 
             if np.prod(tmp_dimension[0:3]) != snapshot.grid_size:
                 raise Exception("Inconsistent snapshot data provided.")
@@ -299,14 +349,21 @@ class DataHandlerMLP(DataHandler):
     # Constructors
     ##############################
 
-    def __init__(self, parameters: Parameters, target_calculator=None,
-                 descriptor_calculator=None, input_data_scaler=None,
-                 output_data_scaler=None, clear_data=True):
-        super(DataHandlerMLP, self).__init__(parameters,
-                                          target_calculator=target_calculator,
-                                          descriptor_calculator=
-                                          descriptor_calculator)
-        # Data will be scaled per user specification.            
+    def __init__(
+        self,
+        parameters: Parameters,
+        target_calculator=None,
+        descriptor_calculator=None,
+        input_data_scaler=None,
+        output_data_scaler=None,
+        clear_data=True,
+    ):
+        super(DataHandlerMLP, self).__init__(
+            parameters,
+            target_calculator=target_calculator,
+            descriptor_calculator=descriptor_calculator,
+        )
+        # Data will be scaled per user specification.
         self.input_data_scaler = input_data_scaler
         if self.input_data_scaler is None:
             self.input_data_scaler = DataScaler(
@@ -413,12 +470,16 @@ class DataHandlerMLP(DataHandler):
         # than we can definitely not reparametrize the DataScalers.
         if self.nr_training_data == 0:
             reparametrize_scaler = False
-            if self.input_data_scaler.cantransform is False or \
-                    self.output_data_scaler.cantransform is False:
-                raise Exception("In inference mode, the DataHandlerMLP needs "
-                                "parametrized DataScalers, "
-                                "while you provided unparametrized "
-                                "DataScalers.")
+            if (
+                self.input_data_scaler.cantransform is False
+                or self.output_data_scaler.cantransform is False
+            ):
+                raise Exception(
+                    "In inference mode, the DataHandlerMLP needs "
+                    "parametrized DataScalers, "
+                    "while you provided unparametrized "
+                    "DataScalers."
+                )
 
         # Parametrize the scalers, if needed.
         if reparametrize_scaler:
@@ -687,12 +748,14 @@ class DataHandlerMLP(DataHandler):
             # OR only test snapshots.
             if self.nr_test_snapshots != 0:
                 if self.nr_training_snapshots == 0:
-                    printout("DataHandlerMLP prepared for inference. No training "
-                             "possible with this setup. If this is not what "
-                             "you wanted, please revise the input script. "
-                             "Validation snapshots you may have entered will"
-                             "be ignored.",
-                             min_verbosity=0)
+                    printout(
+                        "DataHandlerMLP prepared for inference. No training "
+                        "possible with this setup. If this is not what "
+                        "you wanted, please revise the input script. "
+                        "Validation snapshots you may have entered will"
+                        "be ignored.",
+                        min_verbosity=0,
+                    )
             else:
                 if self.nr_training_snapshots == 0:
                     raise Exception("No training snapshots provided.")
@@ -1239,28 +1302,35 @@ class DataHandlerGraph(DataHandler):
     ##############################
 
     def __init__(
-        self, parameters: Parameters, target_calculator=None,
-        descriptor_calculator=None, input_data_scaler=None,
-        output_data_scaler=None, clear_data=True,
+        self,
+        parameters: Parameters,
+        target_calculator=None,
+        descriptor_calculator=None,
+        input_data_scaler=None,
+        output_data_scaler=None,
+        clear_data=True,
     ):
         super(DataHandlerGraph, self).__init__(
-            parameters, target_calculator=target_calculator,
-            descriptor_calculator=descriptor_calculator
+            parameters,
+            target_calculator=target_calculator,
+            descriptor_calculator=descriptor_calculator,
         )
         self.params = parameters
 
-        # Data will be scaled per user specification.            
+        # Data will be scaled per user specification.
         self.input_data_scaler = input_data_scaler
         if self.input_data_scaler is None:
-            self.input_data_scaler \
-                = DataScaler(self.parameters.input_rescaling_type,
-                             use_horovod=self.use_horovod)
+            self.input_data_scaler = DataScaler(
+                self.parameters.input_rescaling_type,
+                use_horovod=self.use_horovod,
+            )
 
         self.output_data_scaler = output_data_scaler
         if self.output_data_scaler is None:
-            self.output_data_scaler \
-                = DataScaler(self.parameters.output_rescaling_type,
-                             use_horovod=self.use_horovod)
+            self.output_data_scaler = DataScaler(
+                self.parameters.output_rescaling_type,
+                use_horovod=self.use_horovod,
+            )
 
         # Actual data points in the different categories.
         self.nr_training_data = 0
@@ -1291,11 +1361,16 @@ class DataHandlerGraph(DataHandler):
 
     # Temporary
     def add_snapshot(
-        self, input_file, input_directory,
-        output_file, output_directory,
+        self,
+        input_file,
+        input_directory,
+        output_file,
+        output_directory,
         add_snapshot_as,
-        output_units="1/(eV*A^3)", input_units="None",
-        calculation_output_file="", snapshot_type="numpy"
+        output_units="1/(eV*A^3)",
+        input_units="None",
+        calculation_output_file="",
+        snapshot_type="numpy",
     ):
         """
         Add a snapshot to the data pipeline.
@@ -1318,13 +1393,15 @@ class DataHandlerGraph(DataHandler):
         """
 
         snapshot = Snapshot(
-            input_file, input_directory,
-            output_file, output_directory,
+            input_file,
+            input_directory,
+            output_file,
+            output_directory,
             add_snapshot_as,
             input_units=input_units,
             output_units=output_units,
             calculation_output=calculation_output_file,
-            snapshot_type=snapshot_type
+            snapshot_type=snapshot_type,
         )
         self.parameters.snapshot_directories_list.append(snapshot)
 
@@ -1376,8 +1453,10 @@ class DataHandlerGraph(DataHandler):
         # an error later. If there is an error, check_snapshots() will raise
         # an exception.
 
-        printout("Checking the snapshots and your inputs for consistency.",
-                 min_verbosity=1)
+        printout(
+            "Checking the snapshots and your inputs for consistency.",
+            min_verbosity=1,
+        )
         self._check_snapshots()
         printout("Consistency check successful.", min_verbosity=0)
 
@@ -1386,24 +1465,33 @@ class DataHandlerGraph(DataHandler):
         # than we can definitely not reparametrize the DataScalers.
         if self.nr_training_snapshots == 0:
             reparametrize_scaler = False
-            if self.input_data_scaler.cantransform is False or \
-                    self.output_data_scaler.cantransform is False:
-                raise Exception("In inference mode, the DataHandler needs "
-                                "parametrized DataScalers, "
-                                "while you provided unparametrized "
-                                "DataScalers.")
+            if (
+                self.input_data_scaler.cantransform is False
+                or self.output_data_scaler.cantransform is False
+            ):
+                raise Exception(
+                    "In inference mode, the DataHandler needs "
+                    "parametrized DataScalers, "
+                    "while you provided unparametrized "
+                    "DataScalers."
+                )
 
         # Parametrize the scalers, if needed.
         if reparametrize_scaler:
             # printout("Initializing the data scalers.", min_verbosity=1)
             # self._parametrize_scalers()
             # printout("Data scalers initialized.", min_verbosity=0)
-            printout("Warning: Data scaling not yet implemented for graph data.", min_verbosity=1)
-        elif self.parameters.use_lazy_loading is False and \
-                self.nr_training_snapshots != 0:
             printout(
-                "Data scalers already initilized, loading data to RAM.", # Nothing is loaded to RAM here
-                min_verbosity=0
+                "Warning: Data scaling not yet implemented for graph data.",
+                min_verbosity=1,
+            )
+        elif (
+            self.parameters.use_lazy_loading is False
+            and self.nr_training_snapshots != 0
+        ):
+            printout(
+                "Data scalers already initilized, loading data to RAM.",  # Nothing is loaded to RAM here
+                min_verbosity=0,
             )
 
         # Build Datasets.
@@ -1470,17 +1558,21 @@ class DataHandlerGraph(DataHandler):
         """
         # get the snapshot from the snapshot number
         snapshot = self.parameters.snapshot_directories_list[snapshot_number]
-        
+
         if self.parameters.use_lazy_loading:
             # This fails if an incorrect snapshot was loaded.
             if self.test_data_sets[0].currently_loaded_file != snapshot_number:
-                raise Exception("Cannot calculate gradients, wrong file "
-                                "was lazily loaded.")
+                raise Exception(
+                    "Cannot calculate gradients, wrong file "
+                    "was lazily loaded."
+                )
             return self.test_data_sets[0].input_data.grad
         else:
-            return self.test_data_inputs.\
-                       grad[snapshot.grid_size*snapshot_number:
-                            snapshot.grid_size*(snapshot_number+1)]
+            return self.test_data_inputs.grad[
+                snapshot.grid_size
+                * snapshot_number : snapshot.grid_size
+                * (snapshot_number + 1)
+            ]
 
     def get_snapshot_calculation_output(self, snapshot_number):
         """
@@ -1497,8 +1589,9 @@ class DataHandlerGraph(DataHandler):
             Path to the calculation output for this snapshot.
 
         """
-        return self.parameters.snapshot_directories_list[snapshot_number].\
-            calculation_output
+        return self.parameters.snapshot_directories_list[
+            snapshot_number
+        ].calculation_output
 
     ##############################
     # Private methods
@@ -1507,9 +1600,11 @@ class DataHandlerGraph(DataHandler):
     # Loading data
     ######################
 
-    def _check_snapshots(self): # ! TODO
+    def _check_snapshots(self):  # ! TODO
         """Check the snapshots for consistency."""
-        self.input_dimension = 1 # Subject to change in case of some _invariant_ descriptors
+        self.input_dimension = (
+            1  # Subject to change in case of some _invariant_ descriptors
+        )
 
         # Now we need to confirm that the snapshot list has some inner
         # consistency.
@@ -1519,10 +1614,11 @@ class DataHandlerGraph(DataHandler):
             # but in the number of datasets, we also need to multiply by that.
             for snapshot in self.parameters.snapshot_directories_list:
                 # open file
-                ldos = np.load(os.path.join(
-                    snapshot.output_npy_directory,
-                    snapshot.output_npy_file
-                ))
+                ldos = np.load(
+                    os.path.join(
+                        snapshot.output_npy_directory, snapshot.output_npy_file
+                    )
+                )
                 snapshot.grid_dimensions = list(ldos.shape[:3])
                 snapshot.grid_size = int(np.prod(snapshot.grid_dimensions))
                 if snapshot.snapshot_function == "tr":
@@ -1535,8 +1631,9 @@ class DataHandlerGraph(DataHandler):
                     self.nr_validation_snapshots += 1
                     # self.nr_validation_data += snapshot.grid_size
                 else:
-                    raise Exception("Unknown option for snapshot splitting "
-                                    "selected.")
+                    raise Exception(
+                        "Unknown option for snapshot splitting " "selected."
+                    )
 
             # MALA can either be run in training or test-only mode.
             # But it has to be run in either of those!
@@ -1544,12 +1641,14 @@ class DataHandlerGraph(DataHandler):
             # OR only test snapshots.
             if self.nr_test_snapshots != 0:
                 if self.nr_training_snapshots == 0:
-                    printout("DataHandler prepared for inference. No training "
-                             "possible with this setup. If this is not what "
-                             "you wanted, please revise the input script. "
-                             "Validation snapshots you may have entered will"
-                             "be ignored.",
-                             min_verbosity=0)
+                    printout(
+                        "DataHandler prepared for inference. No training "
+                        "possible with this setup. If this is not what "
+                        "you wanted, please revise the input script. "
+                        "Validation snapshots you may have entered will"
+                        "be ignored.",
+                        min_verbosity=0,
+                    )
             else:
                 if self.nr_training_snapshots == 0:
                     raise Exception("No training snapshots provided.")
@@ -1559,7 +1658,7 @@ class DataHandlerGraph(DataHandler):
             raise Exception("Wrong parameter for data splitting provided.")
 
         # Reordering the lists.
-        snapshot_order = {'tr': 0, 'va': 1, 'te': 2}
+        snapshot_order = {"tr": 0, "va": 1, "te": 2}
         self.parameters.snapshot_directories_list.sort(
             key=lambda d: snapshot_order[d.snapshot_function]
         )
@@ -1568,162 +1667,211 @@ class DataHandlerGraph(DataHandler):
         """Build the DataSets that are used during training."""
         if self.parameters.use_clustering:
             raise Exception("Clustering not supported in this mode")
-        
+
         # if self.input_data_scaler is not None:
         #     raise Exception("Data scalers not supported in this mode")
-        
+
         # if self.output_data_scaler is not None:
         #     raise Exception("Data scalers not supported in this mode")
 
         if not self.parameters.use_graph_data_set:
             raise Exception("Wrong dataset type selected.")
-        
+
         printout("Using GraphDataset.", min_verbosity=2)
         if self.nr_training_snapshots != 0:
             train_ldos_paths = []
             train_input_paths = []
             for snapshot in self.parameters.snapshot_directories_list:
                 if snapshot.snapshot_function == "tr":
-                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
-                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    ldos_path = os.path.join(
+                        snapshot.output_npy_directory, snapshot.output_npy_file
+                    )
+                    input_path = os.path.join(
+                        snapshot.input_npy_directory, snapshot.input_npy_file
+                    )
                     train_ldos_paths.append(ldos_path)
                     train_input_paths.append(input_path)
 
             if self.parameters.use_lazy_loading:
-                self.training_data_sets.append(LazyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=train_ldos_paths, input_paths=train_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
+                self.training_data_sets.append(
+                    LazyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=train_ldos_paths,
+                        input_paths=train_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             elif self.parameters.use_on_the_fly_graph_dataset:
-                self.training_data_sets.append(OnTheFlyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=train_ldos_paths, input_paths=train_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    n_prefetch=self.params.data.n_prefetch,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                    on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
-                    ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
-                    snapshot_frac=self.params.data.snapshot_frac,
-                ))
+                self.training_data_sets.append(
+                    OnTheFlyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=train_ldos_paths,
+                        input_paths=train_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        n_prefetch=self.params.data.n_prefetch,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                        on_the_fly_shuffling=self.params.data.on_the_fly_shuffling,
+                        ldos_grid_random_subset=self.params.data.ldos_grid_random_subset,
+                        snapshot_frac=self.params.data.snapshot_frac,
+                    )
+                )
             else:
-                self.training_data_sets.append(GraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=train_ldos_paths, input_paths=train_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
-            self.output_dimension = self.training_data_sets[0].ldos_dim # Probably not the right place to do it
+                self.training_data_sets.append(
+                    GraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=train_ldos_paths,
+                        input_paths=train_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
+            self.output_dimension = self.training_data_sets[
+                0
+            ].ldos_dim  # Probably not the right place to do it
 
         if self.nr_validation_snapshots != 0:
             validation_ldos_paths = []
             validation_input_paths = []
             for snapshot in self.parameters.snapshot_directories_list:
                 if snapshot.snapshot_function == "va":
-                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
-                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    ldos_path = os.path.join(
+                        snapshot.output_npy_directory, snapshot.output_npy_file
+                    )
+                    input_path = os.path.join(
+                        snapshot.input_npy_directory, snapshot.input_npy_file
+                    )
                     validation_ldos_paths.append(ldos_path)
                     validation_input_paths.append(input_path)
 
             if self.parameters.use_lazy_loading:
-                self.validation_data_sets.append(LazyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
+                self.validation_data_sets.append(
+                    LazyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=validation_ldos_paths,
+                        input_paths=validation_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             elif self.parameters.use_vanilla_graph_dataset_for_validation:
-                self.validation_data_sets.append(GraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
+                self.validation_data_sets.append(
+                    GraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=validation_ldos_paths,
+                        input_paths=validation_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             elif self.parameters.use_on_the_fly_graph_dataset:
-                self.validation_data_sets.append(OnTheFlyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    n_prefetch=self.params.data.n_prefetch,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners
-                ))
+                self.validation_data_sets.append(
+                    OnTheFlyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=validation_ldos_paths,
+                        input_paths=validation_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        n_prefetch=self.params.data.n_prefetch,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             else:
-                self.validation_data_sets.append(GraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=validation_ldos_paths, input_paths=validation_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
-            self.output_dimension = self.validation_data_sets[0].ldos_dim # Probably not the right place to do it
+                self.validation_data_sets.append(
+                    GraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=validation_ldos_paths,
+                        input_paths=validation_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
+            self.output_dimension = self.validation_data_sets[
+                0
+            ].ldos_dim  # Probably not the right place to do it
 
         if self.nr_test_snapshots != 0:
             test_ldos_paths = []
             test_input_paths = []
             for snapshot in self.parameters.snapshot_directories_list:
                 if snapshot.snapshot_function == "te":
-                    ldos_path = os.path.join(snapshot.output_npy_directory, snapshot.output_npy_file)
-                    input_path = os.path.join(snapshot.input_npy_directory, snapshot.input_npy_file)
+                    ldos_path = os.path.join(
+                        snapshot.output_npy_directory, snapshot.output_npy_file
+                    )
+                    input_path = os.path.join(
+                        snapshot.input_npy_directory, snapshot.input_npy_file
+                    )
                     test_ldos_paths.append(ldos_path)
                     test_input_paths.append(input_path)
 
             if self.parameters.use_lazy_loading:
-                self.test_data_sets.append(LazyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=test_ldos_paths, input_paths=test_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
+                self.test_data_sets.append(
+                    LazyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=test_ldos_paths,
+                        input_paths=test_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             elif self.parameters.use_on_the_fly_graph_dataset:
-                self.test_data_sets.append(OnTheFlyGraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=test_ldos_paths, input_paths=test_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    n_prefetch=self.params.data.n_prefetch,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))                
+                self.test_data_sets.append(
+                    OnTheFlyGraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=test_ldos_paths,
+                        input_paths=test_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        n_prefetch=self.params.data.n_prefetch,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
             else:
-                self.test_data_sets.append(GraphDataset(
-                    self.params.data.n_closest_ions,
-                    self.params.data.n_closest_ldos,
-                    self.params.running.ldos_grid_batch_size,
-                    self.params.network.max_degree,
-                    ldos_paths=test_ldos_paths, input_paths=test_input_paths,
-                    n_batches=self.params.data.n_batches,
-                    grid_points_in_corners=self.params.data.grid_points_in_corners,
-                ))
-            self.output_dimension = self.test_data_sets[0].ldos_dim # Probably not the right place to do it
+                self.test_data_sets.append(
+                    GraphDataset(
+                        self.params.data.n_closest_ions,
+                        self.params.data.n_closest_ldos,
+                        self.params.running.ldos_grid_batch_size,
+                        self.params.network.max_degree,
+                        ldos_paths=test_ldos_paths,
+                        input_paths=test_input_paths,
+                        n_batches=self.params.data.n_batches,
+                        grid_points_in_corners=self.params.data.grid_points_in_corners,
+                    )
+                )
+            self.output_dimension = self.test_data_sets[
+                0
+            ].ldos_dim  # Probably not the right place to do it
+
     # Scaling
     ######################
     # Not implemented yet.
-    
+
     def _parametrize_scalers(self):
         """Use the training data to parametrize the DataScalers."""
         ##################
@@ -1737,4 +1885,3 @@ class DataHandlerGraph(DataHandler):
         # scaling. This should save some performance.
 
         raise Exception("Not implemented yet")
-    

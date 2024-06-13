@@ -48,19 +48,18 @@ class Tester:
         snapshots is returned. If "mae", then the MAE across all snapshots
         will be calculated and returned.
     """
-    
+
     def __new__(cls, params, *args, **kwargs):
-        if cls == Tester:
+        if cls == Tester:  #! Resolve how it should work
             # Will be the case when called as mala.Tester()
             if params.network.nn_type == "se3_transformer":
-                return super(cls, TesterGraph).__new__(TesterGraph)
+                return super(cls, TesterGraph).__new__(TesterGraph, params)
             else:
-                return super(cls, TesterMLP).__new__(TesterMLP)
+                return super(cls, TesterMLP).__new__(TesterMLP, params)
         else:
-            # Will be the case when mala.TesterGraph or mala.TesterMLP 
+            # Will be the case when mala.TesterGraph or mala.TesterMLP
             # is called directly (e.g. when loading a model)
             return super(Tester, cls).__new__(cls)
-
 
     def __init__(
         self,
@@ -328,9 +327,50 @@ class Tester:
 
             target_calculator.read_from_array(predicted_target)
             predicted = target_calculator.density
+            return np.mean(np.abs(actual - predicted))
+
+        elif observable == "density_relative":
+            target_calculator = self.data.target_calculator
+            if not isinstance(target_calculator, LDOS) and not isinstance(
+                target_calculator, Density
+            ):
+                raise Exception(
+                    "Cannot calculate the total energy from this "
+                    "observable."
+                )
+            target_calculator.read_additional_calculation_data(
+                self.data.get_snapshot_calculation_output(snapshot_number)
+            )
+
+            target_calculator.read_from_array(actual_target)
+            actual = target_calculator.density
+
+            target_calculator.read_from_array(predicted_target)
+            predicted = target_calculator.density
             return np.mean(np.abs((actual - predicted) / actual)) * 100
 
         elif observable == "dos":
+            target_calculator = self.data.target_calculator
+            if not isinstance(target_calculator, LDOS) and not isinstance(
+                target_calculator, DOS
+            ):
+                raise Exception(
+                    "Cannot calculate the total energy from this "
+                    "observable."
+                )
+            target_calculator.read_additional_calculation_data(
+                self.data.get_snapshot_calculation_output(snapshot_number)
+            )
+
+            target_calculator.read_from_array(actual_target)
+            actual = target_calculator.density_of_states
+
+            target_calculator.read_from_array(predicted_target)
+            predicted = target_calculator.density_of_states
+
+            return np.abs(actual - predicted).mean()
+
+        elif observable == "dos_realtive":
             target_calculator = self.data.target_calculator
             if not isinstance(target_calculator, LDOS) and not isinstance(
                 target_calculator, DOS
@@ -366,7 +406,8 @@ class Tester:
         # We will use the DataSet iterator to iterate over the test data.
         # But since we only want the data per snapshot,
         # we need to make sure the batch size is compatible with that.
-        from mala.network.tester import TesterGraph # Avoid circular import.
+        from mala.network.tester import TesterGraph  # Avoid circular import.
+
         if type(self) is TesterGraph:
             # No preparation needed for the graph tester.
             return
@@ -391,24 +432,38 @@ class Tester:
                 min_verbosity=0,
             )
             self.parameters.mini_batch_size = optimal_batch_size
-        self.number_of_batches_per_snapshot = int(grid_size /
-                                                  self.parameters.
-                                                  mini_batch_size)
+        self.number_of_batches_per_snapshot = int(
+            grid_size / self.parameters.mini_batch_size
+        )
 
 
 class TesterMLP(Tester, RunnerMLP):
-    def __init__(self, params, network, data, observables_to_test=["ldos"],
-                 output_format="list"):
-        """Initialize the Tester class.
-        """
-        Tester.__init__(self, params, network, data, observables_to_test, output_format)
+    def __init__(
+        self,
+        params,
+        network,
+        data,
+        observables_to_test=["ldos"],
+        output_format="list",
+    ):
+        """Initialize the Tester class."""
+        Tester.__init__(
+            self, params, network, data, observables_to_test, output_format
+        )
         RunnerMLP.__init__(self, params, network, data)
 
 
 class TesterGraph(Tester, RunnerGraph):
-    def __init__(self, params, network, data, observables_to_test=["ldos"],
-                 output_format="list"):
-        """Initialize the TesterGraph class.
-        """
-        Tester.__init__(self, params, network, data, observables_to_test, output_format)
+    def __init__(
+        self,
+        params,
+        network,
+        data,
+        observables_to_test=["ldos"],
+        output_format="list",
+    ):
+        """Initialize the TesterGraph class."""
+        Tester.__init__(
+            self, params, network, data, observables_to_test, output_format
+        )
         RunnerGraph.__init__(self, params, network, data)

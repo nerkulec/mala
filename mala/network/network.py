@@ -24,7 +24,10 @@ from se3_transformer.model.layers.norm import NormSE3
 from se3_transformer.model.layers.pooling import GPooling
 from se3_transformer.runtime.utils import str2bool
 from se3_transformer.model.fiber import Fiber
-from se3_transformer.model.transformer import Sequential, get_populated_edge_features
+from se3_transformer.model.transformer import (
+    Sequential,
+    get_populated_edge_features,
+)
 
 
 class Network(nn.Module):
@@ -214,6 +217,7 @@ class Network(nn.Module):
 
 class FeedForwardNet(Network):
     """Initialize this network as a feed-forward network."""
+
     def __new__(cls):
         return super(Network, cls).__new__(cls)
 
@@ -302,13 +306,19 @@ class FeedForwardNet(Network):
 
 class SE3Encoder(Network):
     """Initialize this network as a SE(3)-Equivariant encoder graph neural network."""
+
     def __init__(self, params):
         super(SE3Encoder, self).__init__(params)
         self.hidden_size = params.network.layer_sizes[1]
 
-        input_fiber  = Fiber({'0': 1})
-        hidden_fiber = Fiber({str(i): self.hidden_size for i in range(self.params.max_degree+1)})
-        edge_fiber   = Fiber({})
+        input_fiber = Fiber({"0": 1})
+        hidden_fiber = Fiber(
+            {
+                str(i): self.hidden_size
+                for i in range(self.params.max_degree + 1)
+            }
+        )
+        edge_fiber = Fiber({})
 
         self.input_layer = AttentionBlockSE3(
             fiber_in=input_fiber,
@@ -322,71 +332,93 @@ class SE3Encoder(Network):
         )
         self.hidden_layers_ = []
         for _ in range(len(self.params.layer_sizes) - 2):
-            self.hidden_layers_.append(AttentionBlockSE3(
-                fiber_in=hidden_fiber,
-                fiber_out=hidden_fiber,
-                fiber_edge=edge_fiber,
-                num_heads=self.params.num_heads,
-                channels_div=self.params.channels_div,
-                max_degree=self.params.max_degree, # ! REDO
-                fuse_level=ConvSE3FuseLevel.FULL,
-                low_memory=False,
-                use_batch_norm=self.parameters_full.running.batch_norm,
-                dropout=self.parameters_full.running.dropout,
-            ))
+            self.hidden_layers_.append(
+                AttentionBlockSE3(
+                    fiber_in=hidden_fiber,
+                    fiber_out=hidden_fiber,
+                    fiber_edge=edge_fiber,
+                    num_heads=self.params.num_heads,
+                    channels_div=self.params.channels_div,
+                    max_degree=self.params.max_degree,  # ! REDO
+                    fuse_level=ConvSE3FuseLevel.FULL,
+                    low_memory=False,
+                    use_batch_norm=self.parameters_full.running.batch_norm,
+                    dropout=self.parameters_full.running.dropout,
+                )
+            )
         self.hidden_layers = nn.ModuleList(self.hidden_layers_)
         # self.to(self.params._configuration["device"])
-    
+
     def embed(self, graph_ions: DGLGraph):
         basis_ions = {}
         for key, value in graph_ions.edata.items():
-            if key[:6] == 'basis_':
+            if key[:6] == "basis_":
                 basis_ions[key[6:]] = value
         if self.parameters_full.running.input_noise > 0 and self.training:
             graph_embedding = self.input_layer(
-                {'0': graph_ions.ndata['feature'] + torch.normal(
-                    mean=0.0,
-                    std=self.parameters_full.running.input_noise,
-                    size=graph_ions.ndata['feature'].size(),
-                    device=graph_ions.ndata['feature'].device,
-                )},
-                {'0': graph_ions.edata['edge_features'] + torch.normal(
-                    mean=0.0,
-                    std=self.parameters_full.running.input_noise,
-                    size=graph_ions.edata['edge_features'].size(),
-                    device=graph_ions.edata['edge_features'].device,
-                )},
-                graph=graph_ions, basis=basis_ions
+                {
+                    "0": graph_ions.ndata["feature"]
+                    + torch.normal(
+                        mean=0.0,
+                        std=self.parameters_full.running.input_noise,
+                        size=graph_ions.ndata["feature"].size(),
+                        device=graph_ions.ndata["feature"].device,
+                    )
+                },
+                {
+                    "0": graph_ions.edata["edge_features"]
+                    + torch.normal(
+                        mean=0.0,
+                        std=self.parameters_full.running.input_noise,
+                        size=graph_ions.edata["edge_features"].size(),
+                        device=graph_ions.edata["edge_features"].device,
+                    )
+                },
+                graph=graph_ions,
+                basis=basis_ions,
             )
         else:
             graph_embedding = self.input_layer(
-                {'0': graph_ions.ndata['feature']},
-                {'0': graph_ions.edata['edge_features']},
-                graph=graph_ions, basis=basis_ions
+                {"0": graph_ions.ndata["feature"]},
+                {"0": graph_ions.edata["edge_features"]},
+                graph=graph_ions,
+                basis=basis_ions,
             )
         graph_embedding_local = graph_embedding
         for layer in self.hidden_layers:
             graph_embedding_local = layer(
                 graph_embedding_local,
-                {'0': graph_ions.edata['edge_features']},
-                graph=graph_ions, basis=basis_ions
+                {"0": graph_ions.edata["edge_features"]},
+                graph=graph_ions,
+                basis=basis_ions,
             )
         return graph_embedding_local
 
-    def extend_embedding(self, graph_embedding: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
-        n_grid = graph_grid.number_of_nodes()-graph_ions.number_of_nodes()
+    def extend_embedding(
+        self, graph_embedding: dict, graph_ions: DGLGraph, graph_grid: DGLGraph
+    ):
+        n_grid = graph_grid.number_of_nodes() - graph_ions.number_of_nodes()
         graph_embedding_extended = {
-            str(i):torch.cat([
-                graph_embedding[str(i)],
-                torch.zeros((n_grid, self.hidden_size, 2*i+1),
-                dtype=torch.float32, device=graph_ions.device, )
-            ], dim=0) for i in range(self.params.max_degree+1)
+            str(i): torch.cat(
+                [
+                    graph_embedding[str(i)],
+                    torch.zeros(
+                        (n_grid, self.hidden_size, 2 * i + 1),
+                        dtype=torch.float32,
+                        device=graph_ions.device,
+                    ),
+                ],
+                dim=0,
+            )
+            for i in range(self.params.max_degree + 1)
         }
         return graph_embedding_extended
-    
+
     def forward(self, graph_ions: DGLGraph, graph_grid: DGLGraph):
         graph_embedding = self.embed(graph_ions)
-        graph_embedding_extended = self.extend_embedding(graph_embedding, graph_ions, graph_grid)
+        graph_embedding_extended = self.extend_embedding(
+            graph_embedding, graph_ions, graph_grid
+        )
         return graph_embedding_extended
 
 
@@ -405,35 +437,55 @@ class SE3Decoder(nn.Module):
             self.ldos_size = params.targets.ldos_gridsize
 
             # hidden_fiber = Fiber({'0': self.hidden_size,  '1': self.hidden_size})
-            hidden_fiber = Fiber({str(i): self.hidden_size for i in range(self.params.max_degree+1)})
-            ldos_fiber   = Fiber({'0': self.ldos_size})
-            edge_fiber   = Fiber({})
+            hidden_fiber = Fiber(
+                {
+                    str(i): self.hidden_size
+                    for i in range(self.params.max_degree + 1)
+                }
+            )
+            ldos_fiber = Fiber({"0": self.ldos_size})
+            edge_fiber = Fiber({})
 
             self.output_layer_grid = AttentionBlockSE3(
                 fiber_in=hidden_fiber,
                 fiber_out=ldos_fiber,
                 fiber_edge=edge_fiber,
-                num_heads=1, # Output layer has to have 1 head
+                num_heads=1,  # Output layer has to have 1 head
                 channels_div=1,
                 max_degree=1,
                 fuse_level=ConvSE3FuseLevel.FULL,
                 low_memory=False,
             )
             # self.to(self.params._configuration["device"])
-    
-    def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
+
+    def predict_ldos(
+        self,
+        graph_embedding_extended: dict,
+        graph_ions: DGLGraph,
+        graph_grid: DGLGraph,
+    ):
         basis_grid = {}
         for key, value in graph_grid.edata.items():
-            if key[:6] == 'basis_':
+            if key[:6] == "basis_":
                 basis_grid[key[6:]] = value
 
         ldos_pred = self.output_layer_grid(
-            graph_embedding_extended, {'0': graph_grid.edata['edge_features']}, graph=graph_grid, basis=basis_grid
+            graph_embedding_extended,
+            {"0": graph_grid.edata["edge_features"]},
+            graph=graph_grid,
+            basis=basis_grid,
         )
-        return ldos_pred['0'].squeeze(-1)[graph_ions.number_of_nodes():]
+        return ldos_pred["0"].squeeze(-1)[graph_ions.number_of_nodes() :]
 
-    def forward(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
-        ldos_pred = self.predict_ldos(graph_embedding_extended, graph_ions, graph_grid)
+    def forward(
+        self,
+        graph_embedding_extended: dict,
+        graph_ions: DGLGraph,
+        graph_grid: DGLGraph,
+    ):
+        ldos_pred = self.predict_ldos(
+            graph_embedding_extended, graph_ions, graph_grid
+        )
         return ldos_pred
 
     def calculate_loss(self, prediction, graph_ions, graph_grid):
@@ -454,18 +506,22 @@ class SE3Decoder(nn.Module):
             Loss value for prediction and target.
 
         """
-        loss = self.loss_func(prediction, graph_grid.ndata['target'][-prediction.shape[0]:])
+        loss = self.loss_func(
+            prediction, graph_grid.ndata["target"][-prediction.shape[0] :]
+        )
         # loss_ions = self.loss_func(prediction, graph_ions.ndata['target'])
-        
+
         if self.parameters_full.running.l1_regularization > 0:
             loss += self.parameters_full.running.l1_regularization * sum(
                 [torch.sum(torch.abs(param)) for param in self.parameters()]
             )
-        loss_total = loss #+ loss_ions
+        loss_total = loss  # + loss_ions
         return loss_total
+
 
 class SE3Transformer(Network):
     """Initialize this network as a SE(3)-Equivariant transformer graph neural network."""
+
     def __init__(self, params):
         super(SE3Transformer, self).__init__(params)
         self.encoder = SE3Encoder(params)
@@ -477,16 +533,27 @@ class SE3Transformer(Network):
         graph_embedding_extended = self.encoder(graph_ions, graph_grid)
         return graph_embedding_extended
 
-    def predict_ldos(self, graph_embedding_extended: dict, graph_ions: DGLGraph, graph_grid: DGLGraph):
-        ldos_pred = self.decoder(graph_embedding_extended, graph_ions, graph_grid)
+    def predict_ldos(
+        self,
+        graph_embedding_extended: dict,
+        graph_ions: DGLGraph,
+        graph_grid: DGLGraph,
+    ):
+        ldos_pred = self.decoder(
+            graph_embedding_extended, graph_ions, graph_grid
+        )
         return ldos_pred
-    
+
     def forward(self, graph_ions: DGLGraph, graph_grid: DGLGraph):
         graph_embedding = self.embed(graph_ions)
-        graph_embedding_extended = self.extend_embedding(graph_embedding, graph_ions, graph_grid)
-        ldos_pred = self.predict_ldos(graph_embedding_extended, graph_ions, graph_grid)
+        graph_embedding_extended = self.extend_embedding(
+            graph_embedding, graph_ions, graph_grid
+        )
+        ldos_pred = self.predict_ldos(
+            graph_embedding_extended, graph_ions, graph_grid
+        )
         return ldos_pred
-    
+
     def calculate_loss(self, prediction, graph_ions, graph_grid):
         """
         Calculate the loss on grid values
@@ -507,5 +574,3 @@ class SE3Transformer(Network):
         """
         loss = self.decoder.calculate_loss(prediction, graph_ions, graph_grid)
         return loss
-
-

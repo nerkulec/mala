@@ -233,10 +233,14 @@ class ObjectiveBase:
                     layer_counter += 1
 
             elif par.name == "l1_regularization":
-                self.params.running.l1_regularization = par.get_parameter(trial)
+                self.params.running.l1_regularization = par.get_parameter(
+                    trial
+                )
 
             elif par.name == "l2_regularization":
-                self.params.running.l2_regularization = par.get_parameter(trial)
+                self.params.running.l2_regularization = par.get_parameter(
+                    trial
+                )
 
             elif "optimizer" == par.name:
                 self.params.running.optimizer = par.get_parameter(trial)
@@ -245,10 +249,14 @@ class ObjectiveBase:
                 self.params.running.mini_batch_size = par.get_parameter(trial)
 
             elif "ldos_grid_batch_size" == par.name:
-                self.params.running.ldos_grid_batch_size = par.get_parameter(trial)
+                self.params.running.ldos_grid_batch_size = par.get_parameter(
+                    trial
+                )
 
             elif "learning_rate_embedding" == par.name:
-                self.params.running.learning_rate_embedding = par.get_parameter(trial)
+                self.params.running.learning_rate_embedding = (
+                    par.get_parameter(trial)
+                )
 
             elif "n_closest_ions" == par.name:
                 self.params.data.n_closest_ions = par.get_parameter(trial)
@@ -260,13 +268,19 @@ class ObjectiveBase:
                 self.params.network.num_heads = par.get_parameter(trial)
 
             elif "embedding_reuse_steps" == par.name:
-                self.params.running.embedding_reuse_steps = par.get_parameter(trial)
+                self.params.running.embedding_reuse_steps = par.get_parameter(
+                    trial
+                )
 
             elif "learning_rate_embedding" == par.name:
-                self.params.running.learning_rate_embedding = par.get_parameter(trial)
+                self.params.running.learning_rate_embedding = (
+                    par.get_parameter(trial)
+                )
 
             elif "learning_rate_embedding" == par.name:
-                self.params.running.learning_rate_embedding = par.get_parameter(trial)
+                self.params.running.learning_rate_embedding = (
+                    par.get_parameter(trial)
+                )
 
             elif "early_stopping_epochs" == par.name:
                 self.params.running.early_stopping_epochs = par.get_parameter(
@@ -306,10 +320,13 @@ class ObjectiveBase:
                 layer_counter += 1
 
         if self.optimize_layer_list:
-            self.params.network.layer_sizes.\
-                append(self.data_handler.output_dimension)
-        
-        network_type = "ff" if self.params.network.nn_type == "feed-forward" else "gnn"
+            self.params.network.layer_sizes.append(
+                self.data_handler.output_dimension
+            )
+
+        network_type = (
+            "ff" if self.params.network.nn_type == "feed-forward" else "gnn"
+        )
 
         self.params.running.run_name = f"\
 {network_type}_test_optuna_\
@@ -402,8 +419,9 @@ early{self.params.running.early_stopping_epochs}_\
                     layer_counter += 1
 
             elif "optimizer" == par.name:
-                self.params.running.optimizer = par.\
-                    get_parameter(trial, factor_idx)
+                self.params.running.optimizer = par.get_parameter(
+                    trial, factor_idx
+                )
             elif "mini_batch_size" == par.name:
                 self.params.running.mini_batch_size = par.get_parameter(
                     trial, factor_idx

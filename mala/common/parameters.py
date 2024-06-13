@@ -731,34 +731,35 @@ class ParametersRunning(ParametersBase):
     def __init__(self):
         super(ParametersRunning, self).__init__()
         self.optimizer = "Adam"
-        self.learning_rate = 10**(-5)
-        self.learning_rate_embedding = 10**(-4)
+        self.learning_rate = 10 ** (-5)
+        self.learning_rate_embedding = 10 ** (-4)
         self.max_number_epochs = 100
         self.verbosity = True
         self.mini_batch_size = 10
         self.ldos_grid_batch_size = 1000
         self.snapshots_per_epoch = -1
         self.embedding_reuse_steps = 10
-        
+
         self.l1_regularization = 0.0
         self.l2_regularization = 0.0
         self.dropout = 0.0
         self.batch_norm = False
         self.input_noise = 0.0
-        
+
         self.early_stopping_epochs = 0
         self.early_stopping_threshold = 0
         self.learning_rate_scheduler = None
         self.learning_rate_decay = 0.1
         self.learning_rate_patience = 0
-        self.during_training_metric = "ldos"
+        self._during_training_metric = "ldos"
+        self._after_before_training_metric = "ldos"
         self.use_compression = False
         self.num_workers = 0
         self.use_shuffling_for_samplers = True
         self.checkpoints_each_epoch = 0
         self.checkpoint_best_so_far = False
         self.checkpoint_name = "checkpoint_mala"
-        self.run_name = ''
+        self.run_name = ""
         self.logging_dir = "./mala_logging"
         self.logging_dir_append_date = True
         self.logger = "tensorboard"
@@ -1500,7 +1501,7 @@ class Parameters:
                 if member[0][0] != "_":
                     if isinstance(member[1], ParametersBase):
                         # All the subclasses have to provide this function.
-                        member[1]: ParametersBase # type: ignore
+                        member[1]: ParametersBase  # type: ignore
                         json_dict[member[0]] = member[1].to_json()
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(json_dict, f, ensure_ascii=False, indent=4)

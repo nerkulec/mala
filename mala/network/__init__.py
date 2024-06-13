@@ -1,8 +1,8 @@
 """Everything concerning network and network architecture."""
 
 from .network import Network
-from .tester import Tester
-from .trainer import Trainer, TrainerGNN
+from .tester import Tester, TesterMLP, TesterGraph
+from .trainer import Trainer, TrainerMLP, TrainerGNN
 from .hyper_opt import HyperOpt
 from .hyper_opt_optuna import HyperOptOptuna
 from .hyper_opt_naswot import HyperOptNASWOT
@@ -13,4 +13,4 @@ from .hyperparameter_naswot import HyperparameterNASWOT
 from .hyperparameter_optuna import HyperparameterOptuna
 from .hyperparameter_acsd import HyperparameterACSD
 from .acsd_analyzer import ACSDAnalyzer
-from .runner import RunnerMLP, RunnerGraph
+from .runner import Runner, RunnerMLP, RunnerGraph

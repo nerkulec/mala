@@ -1,4 +1,5 @@
 """Position descriptor class."""
+
 import os
 
 import ase
@@ -84,4 +85,3 @@ class Position(Descriptor):
         """Perform actual position extraction."""
         positions_descriptors_np = atoms.get_positions()
         return positions_descriptors_np, len(positions_descriptors_np)
-
