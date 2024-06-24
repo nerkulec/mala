@@ -3,6 +3,8 @@
 import os
 from zipfile import ZipFile, ZIP_STORED
 
+from mala.common.parallelizer import printout
+
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -14,6 +16,11 @@ from mala.network.network import Network
 from mala.datahandling.data_scaler import DataScaler
 from mala.datahandling.data_handler import DataHandler
 from mala import Parameters
+from mala.targets.ldos import LDOS
+from mala.targets.dos import DOS
+from mala.targets.density import Density
+
+from tqdm.auto import tqdm, trange
 
 
 class Runner:
@@ -40,6 +47,345 @@ class Runner:
         self.network = network
         self.data = data
         self.__prepare_to_run()
+
+    def _calculate_errors(
+        self, actual_outputs, predicted_outputs, metrics, snapshot_number
+    ):
+        """
+        Calculate the errors between the actual and predicted outputs.
+
+        Parameters
+        ----------
+        actual_outputs : numpy.ndarray
+            Actual outputs.
+
+        predicted_outputs : numpy.ndarray
+            Predicted outputs.
+
+        metrics : list
+            List of metrics to calculate.
+
+        snapshot_number : int
+            Snapshot number for which the errors are calculated.
+
+        Returns
+        -------
+        errors : dict
+            Dictionary containing the errors.
+        """
+
+        energy_metrics = [metric for metric in metrics if "energy" in metric]
+        non_energy_metrics = [
+            metric for metric in metrics if "energy" not in metric
+        ]
+        errors = self._calculate_energy_errors(
+            actual_outputs, predicted_outputs, energy_metrics, snapshot_number
+        )
+        for metric in non_energy_metrics:
+            try:
+                if metric == "ldos":
+                    error = np.mean((predicted_outputs - actual_outputs) ** 2)
+                    errors[metric] = error
+
+                elif metric == "number_of_electrons":
+                    target_calculator = self.data.target_calculator
+                    if (
+                        not isinstance(target_calculator, LDOS)
+                        and not isinstance(target_calculator, DOS)
+                        and not isinstance(target_calculator, Density)
+                    ):
+                        raise Exception(
+                            "Cannot calculate the band energy from this observable."
+                        )
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+                    actual = target_calculator.get_number_of_electrons(
+                        actual_outputs
+                    )
+                    predicted = target_calculator.get_number_of_electrons(
+                        predicted_outputs
+                    )
+                    errors[metric] = actual - predicted
+
+                elif metric == "density":
+                    target_calculator = self.data.target_calculator
+                    if not isinstance(
+                        target_calculator, LDOS
+                    ) and not isinstance(target_calculator, Density):
+                        raise Exception(
+                            "Cannot calculate the total energy from this "
+                            "observable."
+                        )
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+
+                    target_calculator.read_from_array(actual_outputs)
+                    actual = target_calculator.density
+
+                    target_calculator.read_from_array(predicted_outputs)
+                    predicted = target_calculator.density
+                    errors[metric] = np.mean(np.abs(actual - predicted))
+
+                elif metric == "density_relative":
+                    target_calculator = self.data.target_calculator
+                    if not isinstance(
+                        target_calculator, LDOS
+                    ) and not isinstance(target_calculator, Density):
+                        raise Exception(
+                            "Cannot calculate the total energy from this "
+                            "observable."
+                        )
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+
+                    target_calculator.read_from_array(actual_outputs)
+                    actual = target_calculator.density
+
+                    target_calculator.read_from_array(predicted_outputs)
+                    predicted = target_calculator.density
+                    errors[metric] = (
+                        np.mean(np.abs((actual - predicted) / actual)) * 100
+                    )
+
+                elif metric == "dos":
+                    target_calculator = self.data.target_calculator
+                    if not isinstance(
+                        target_calculator, LDOS
+                    ) and not isinstance(target_calculator, DOS):
+                        raise Exception(
+                            "Cannot calculate the total energy from this "
+                            "observable."
+                        )
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+
+                    target_calculator.read_from_array(actual_outputs)
+                    actual = target_calculator.density_of_states
+
+                    target_calculator.read_from_array(predicted_outputs)
+                    predicted = target_calculator.density_of_states
+
+                    errors[metric] = np.abs(actual - predicted).mean()
+
+                elif metric == "dos_realtive":
+                    target_calculator = self.data.target_calculator
+                    if not isinstance(
+                        target_calculator, LDOS
+                    ) and not isinstance(target_calculator, DOS):
+                        raise Exception(
+                            "Cannot calculate the total energy from this "
+                            "observable."
+                        )
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+
+                    # We shift both the actual and predicted DOS by 1.0 to overcome
+                    # numerical issues with the DOS having values equal to zero.
+                    target_calculator.read_from_array(actual_outputs)
+                    actual = target_calculator.density_of_states + 1.0
+
+                    target_calculator.read_from_array(predicted_outputs)
+                    predicted = target_calculator.density_of_states + 1.0
+
+                    errors[metric] = (
+                        np.ma.masked_invalid(
+                            np.abs(
+                                (actual - predicted)
+                                / (np.abs(actual) + np.abs(predicted))
+                            )
+                        ).mean()
+                        * 100
+                    )
+            except ValueError as e:
+                printout(
+                    f"Error calculating observable: {observable} for snapshot {snapshot_number}",
+                    min_verbosity=0,
+                )
+                printout(e, min_verbosity=2)
+                errors[metric] = float("inf")
+        return errors
+
+    def _calculate_energy_errors(
+        self, actual_outputs, predicted_outputs, energy_types, snapshot_number
+    ):
+        """
+        Calculate the errors between the actual and predicted outputs.
+
+        Parameters
+        ----------
+        actual_outputs : numpy.ndarray
+            Actual outputs.
+
+        predicted_outputs : numpy.ndarray
+            Predicted outputs.
+
+        energy_types : list
+            List of energy types to calculate errors.
+
+        snapshot_number : int
+            Snapshot number for which the errors are calculated.
+        """
+        target_calculator = self.data.target_calculator
+        target_calculator.read_additional_calculation_data(
+            self.data.get_snapshot_calculation_output(snapshot_number)
+        )
+
+        errors = {}
+        fe_dft = target_calculator.fermi_energy_dft
+        fe_actual = None
+        fe_predicted = None
+        try:
+            fe_actual = target_calculator.get_self_consistent_fermi_energy(
+                actual_outputs
+            )
+        except ValueError:
+            errors = {
+                energy_type: float("inf") for energy_type in energy_types
+            }
+            printout(
+                "CAUTION! LDOS ground truth is so wrong that the "
+                "estimation of the self consistent Fermi energy fails."
+            )
+            return errors
+        try:
+            fe_predicted = target_calculator.get_self_consistent_fermi_energy(
+                predicted_outputs
+            )
+        except ValueError:
+            errors = {
+                energy_type: float("inf") for energy_type in energy_types
+            }
+            printout(
+                "CAUTION! LDOS prediction is so wrong that the "
+                "estimation of the self consistent Fermi energy fails."
+            )
+            return errors
+        for energy_type in energy_types:
+            if energy_type == "fermi_energy":
+                fe_error = fe_predicted - fe_actual
+                errors[energy_type] = fe_error
+            elif energy_type == "fermi_energy_dft":
+                fe_error_dft = fe_predicted - fe_dft
+                errors[energy_type] = fe_error_dft
+            elif energy_type == "band_energy":
+                if not isinstance(target_calculator, LDOS) and not isinstance(
+                    target_calculator, DOS
+                ):
+                    raise Exception(
+                        "Cannot calculate the band energy from this observable."
+                    )
+                try:
+                    target_calculator.read_from_array(actual_outputs)
+                    be_actual = target_calculator.get_band_energy(
+                        fermi_energy=fe_actual
+                    )
+                    target_calculator.read_from_array(predicted_outputs)
+                    be_predicted = target_calculator.get_band_energy(
+                        fermi_energy=fe_predicted
+                    )
+                    be_error = (be_predicted - be_actual) * (
+                        1000 / len(target_calculator.atoms)
+                    )
+                    errors[energy_type] = be_error
+                except ValueError:
+                    errors[energy_type] = float("inf")
+            elif energy_type == "band_energy_dft_fe":
+                try:
+                    target_calculator.read_from_array(predicted_outputs)
+                    be_predicted_dft_fe = target_calculator.get_band_energy(
+                        fermi_energy=fe_dft
+                    )
+                    be_error_dft_fe = (be_predicted_dft_fe - be_actual) * (
+                        1000 / len(target_calculator.atoms)
+                    )
+                    errors[energy_type] = be_error_dft_fe
+                except ValueError:
+                    errors[energy_type] = float("inf")
+            elif energy_type == "band_energy_actual_fe":
+                try:
+                    target_calculator.read_from_array(predicted_outputs)
+                    be_predicted_actual_fe = target_calculator.get_band_energy(
+                        fermi_energy=fe_actual
+                    )
+                    be_error_actual_fe = (
+                        be_predicted_actual_fe - be_actual
+                    ) * (1000 / len(target_calculator.atoms))
+                    errors[energy_type] = be_error_actual_fe
+                except ValueError:
+                    errors[energy_type] = float("inf")
+
+            elif energy_type == "total_energy":
+                if not isinstance(target_calculator, LDOS):
+                    raise Exception(
+                        "Cannot calculate the total energy from this "
+                        "observable."
+                    )
+                try:
+                    target_calculator.read_additional_calculation_data(
+                        self.data.get_snapshot_calculation_output(
+                            snapshot_number
+                        )
+                    )
+                    target_calculator.read_from_array(actual_outputs)
+                    te_actual = target_calculator.get_total_energy(
+                        fermi_energy=fe_actual
+                    )
+                    target_calculator.read_from_array(predicted_outputs)
+                    te_predicted = target_calculator.get_total_energy(
+                        fermi_energy=fe_predicted
+                    )
+                    te_error = (te_predicted - te_actual) * (
+                        1000 / len(target_calculator.atoms)
+                    )
+                    errors[energy_type] = te_error
+                except ValueError:
+                    errors[energy_type] = float("inf")
+            elif energy_type == "total_energy_dft_fe":
+                try:
+                    target_calculator.read_from_array(predicted_outputs)
+                    te_predicted_dft_fe = target_calculator.get_total_energy(
+                        fermi_energy=fe_dft
+                    )
+                    te_error_dft_fe = (te_predicted_dft_fe - te_actual) * (
+                        1000 / len(target_calculator.atoms)
+                    )
+                    errors[energy_type] = te_error_dft_fe
+                except ValueError:
+                    errors[energy_type] = float("inf")
+            elif energy_type == "total_energy_actual_fe":
+                try:
+                    target_calculator.read_from_array(predicted_outputs)
+                    te_predicted_actual_fe = (
+                        target_calculator.get_total_energy(
+                            fermi_energy=fe_actual
+                        )
+                    )
+                    te_error_actual_fe = (
+                        te_predicted_actual_fe - te_actual
+                    ) * (1000 / len(target_calculator.atoms))
+                    errors[energy_type] = te_error_actual_fe
+                except ValueError:
+                    errors[energy_type] = float("inf")
+            else:
+                raise Exception(
+                    f"Invalid energy type ({energy_type}) requested."
+                )
+        return errors
 
     def save_run(
         self,
@@ -87,7 +433,7 @@ class Runner:
             params_file = run_name + ".params.json"
             if save_runner:
                 optimizer_file = run_name + ".optimizer.pth"
-
+            os.makedirs(save_path, exist_ok=True)
             self.parameters_full.save(os.path.join(save_path, params_file))
             if self.parameters_full.use_ddp:
                 self.network.module.save_network(
@@ -132,8 +478,8 @@ class Runner:
                     compression=ZIP_STORED,
                 ) as zip_obj:
                     for file in files:
-                        zip_obj.write(os.path.join(save_path, file), file)
-                        os.remove(os.path.join(save_path, file))
+                        zip_obj.write(save_path, file)
+                        # os.remove(os.path.join(save_path, file))
 
     @classmethod
     def load_run(
