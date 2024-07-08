@@ -88,7 +88,7 @@ class Trainer(Runner):
                 self.full_logging_path = os.path.join(
                     self.parameters.logging_dir, name
                 )
-                os.makedirs(self.full_logging_path)
+                os.makedirs(self.full_logging_path, exist_ok=True)
             else:
                 self.full_logging_path = self.parameters.logging_dir
 
@@ -1033,9 +1033,22 @@ class Trainer(Runner):
         torch.save(
             save_dict, optimizer_name, _use_new_zipfile_serialization=False
         )
+        if self.parameters.run_name != '':
+            self.save_run(
+                self.parameters.checkpoint_name,
+                save_runner=True,
+                save_path=self.parameters.run_name,
+            )
+        else:
+            self.save_run(
+                self.parameters.checkpoint_name,
+                save_runner=True
+            )
 
-        self.save_run(
-            self.parameters.checkpoint_name,
-            save_runner=True,
-            save_path=self.parameters.run_name,
-        )
+    @staticmethod
+    def __average_validation(val, name, device="cpu"):
+        """Average validation over multiple parallel processes."""
+        tensor = torch.tensor(val, device=device)
+        dist.all_reduce(tensor)
+        avg_loss = tensor / dist.get_world_size()
+        return avg_loss.item()
