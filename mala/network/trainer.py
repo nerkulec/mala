@@ -630,41 +630,15 @@ class Trainer(Runner):
                         )
                     )
 
-                    if "ldos" in metrics:
-                        error = (
-                            (actual_outputs - predicted_outputs) ** 2
-                        ).mean()
-                        errors[data_set_type]["ldos"].append(error)
-
-                    energy_metrics = [
-                        metric for metric in metrics if "energy" in metric
-                    ]
-                    if len(energy_metrics) > 0:
-                        energy_errors = self._calculate_energy_errors(
-                            actual_outputs,
-                            predicted_outputs,
-                            energy_metrics,
-                            snapshot_number,
-                        )
-                        for metric in energy_metrics:
-                            errors[data_set_type][metric].append(
-                                energy_errors[metric]
-                            )
-
-                    if "number_of_electrons" in metrics:
-                        if len(energy_metrics) == 0:
-                            raise Exception(
-                                "Number of electrons can only be calculated if energy metrics are calculated."
-                            )
-                        num_electrons = (
-                            self.data.target_calculator.number_of_electrons_exact
-                        )
-                        num_electrons_pred = self.data.target_calculator.get_number_of_electrons(
-                            predicted_outputs
-                        )
-                        error = abs(num_electrons - num_electrons_pred)
-                        errors[data_set_type]["number_of_electrons"].append(
-                            error
+                    errors = self._calculate_errors(
+                        actual_outputs,
+                        predicted_outputs,
+                        metrics,
+                        snapshot_number,
+                    )
+                    for metric in metrics:
+                        errors[data_set_type][metric].append(
+                            errors[metric]
                         )
         return errors
 
