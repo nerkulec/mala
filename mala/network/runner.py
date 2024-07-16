@@ -987,24 +987,4 @@ class RunnerGraph(Runner):
     def __prepare_to_run(self):
         """
         Prepare the RunnerGraph to run the Network.
-
-        This includes e.g. horovod setup.
         """
-        # See if we want to use horovod.
-        if self.parameters_full.use_horovod:
-            if self.parameters_full.use_gpu > 0:
-                # We cannot use "printout" here because this is supposed
-                # to happen on every rank.
-                if self.parameters_full.verbosity >= 2:
-                    print(
-                        "size=",
-                        size,
-                        "global_rank=",
-                        rank,
-                        "local_rank=",
-                        local_rank,
-                        "device=",
-                        torch.cuda.get_device_name(local_rank),
-                    )
-                # pin GPU to local rank
-                torch.cuda.set_device(local_rank)

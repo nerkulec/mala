@@ -1111,7 +1111,6 @@ class TrainerGNN(RunnerGraph):
         self.validation_data_loaders = []
         self.test_data_loaders = []
 
-        # Samplers for the horovod case.
         self.train_sampler = None
         self.test_sampler = None
         self.validation_sampler = None
@@ -1308,14 +1307,6 @@ class TrainerGNN(RunnerGraph):
             self.parameters.after_before_training_metric,
         )
 
-        # Collect and average all the losses from all the devices
-        if self.parameters_full.use_horovod:
-            vloss = self.__average_validation(vloss, "average_loss")
-            self.initial_validation_loss = vloss
-            if self.data.test_data_set is not None:
-                tloss = self.__average_validation(tloss, "average_loss")
-                self.initial_test_loss = tloss
-
         printout(
             "Initial Guess - validation data loss: ", vloss, min_verbosity=1
         )
@@ -1391,10 +1382,6 @@ class TrainerGNN(RunnerGraph):
             # training_loss_sum = torch.zeros(1, device=self.parameters._configuration["device"])
             training_loss_sum = 0.0
             training_loss_sum_logging = 0.0
-
-            # train sampler
-            if self.parameters_full.use_horovod:
-                self.train_sampler.set_epoch(epoch)
 
             # shuffle dataset if necessary
             if isinstance(self.data.training_data_sets[0], FastTensorDataset):
@@ -1721,8 +1708,6 @@ class TrainerGNN(RunnerGraph):
                 "validation",
                 self.parameters.after_before_training_metric,
             )
-            if self.parameters_full.use_horovod:
-                vloss = self.__average_validation(vloss, "average_loss")
 
         # Calculate final loss.
         self.final_validation_loss = vloss
@@ -1735,8 +1720,6 @@ class TrainerGNN(RunnerGraph):
                 "test",
                 self.parameters.after_before_training_metric,
             )
-            if self.parameters_full.use_horovod:
-                tloss = self.__average_validation(tloss, "average_loss")
             printout("Final test data loss: ", tloss, min_verbosity=0)
         self.final_test_loss = tloss
 
@@ -1856,18 +1839,6 @@ class TrainerGNN(RunnerGraph):
         if optimizer_dict is not None:
             self.last_epoch = optimizer_dict["epoch"] + 1
 
-        # Scale the learning rate according to horovod.
-        if self.parameters_full.use_horovod:
-            if hvd.size() > 1 and self.last_epoch == 0:
-                printout(
-                    "Rescaling learning rate because multiple workers are"
-                    " used for training.",
-                    min_verbosity=1,
-                )
-                self.parameters.learning_rate = (
-                    self.parameters.learning_rate * hvd.size()
-                )
-
         # Choose an optimizer to use.
         if self.parameters.optimizer == "SGD":
             raise Exception("SGD is not supported.")
@@ -1895,73 +1866,6 @@ class TrainerGNN(RunnerGraph):
             )
             self.patience_counter = optimizer_dict["early_stopping_counter"]
             self.last_loss = optimizer_dict["early_stopping_last_loss"]
-
-        if self.parameters_full.use_horovod:
-            # scaling the batch size for multiGPU per node
-            # self.batch_size= self.batch_size*hvd.local_size()
-
-            compression = (
-                hvd.Compression.fp16
-                if self.parameters_full.running.use_compression
-                else hvd.Compression.none
-            )
-
-            # If lazy loading is used we do not shuffle the data points on
-            # their own, but rather shuffle them
-            # by shuffling the files themselves and then reading file by file
-            # per epoch.
-            # This shuffling is done in the dataset themselves.
-            do_shuffle = self.parameters.use_shuffling_for_samplers
-            if self.data.parameters.use_lazy_loading:
-                do_shuffle = False
-
-            self.train_sampler = (
-                torch.utils.data.distributed.DistributedSampler(
-                    self.data.training_data_sets[0],
-                    num_replicas=hvd.size(),
-                    rank=hvd.rank(),
-                    shuffle=do_shuffle,
-                )
-            )
-
-            self.validation_sampler = (
-                torch.utils.data.distributed.DistributedSampler(
-                    self.data.validation_data_sets[0],
-                    num_replicas=hvd.size(),
-                    rank=hvd.rank(),
-                    shuffle=False,
-                )
-            )
-
-            if self.data.test_data_sets:
-                self.test_sampler = (
-                    torch.utils.data.distributed.DistributedSampler(
-                        self.data.test_data_sets[0],
-                        num_replicas=hvd.size(),
-                        rank=hvd.rank(),
-                        shuffle=False,
-                    )
-                )
-
-            # broadcaste parameters and optimizer state from root device to
-            # other devices
-            hvd.broadcast_parameters(self.network.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.encoder_optimizer, root_rank=0)
-            hvd.broadcast_optimizer_state(self.decoder_optimizer, root_rank=0)
-
-            # Wraps the opimizer for multiGPU operation
-            self.encoder_optimizer = hvd.DistributedOptimizer(
-                self.encoder_optimizer,
-                named_parameters=self.network.encoder.named_parameters(),
-                compression=compression,
-                op=hvd.Average,
-            )
-            self.decoder_optimizer = hvd.DistributedOptimizer(
-                self.decoder_optimizer,
-                named_parameters=self.network.decoder.named_parameters(),
-                compression=compression,
-                op=hvd.Average,
-            )
 
         # Instantiate the learning rate scheduler, if necessary.
         if self.parameters.learning_rate_scheduler == "ReduceLROnPlateau":
@@ -2001,7 +1905,6 @@ class TrainerGNN(RunnerGraph):
         do_shuffle = self.parameters.use_shuffling_for_samplers
         if (
             self.data.parameters.use_lazy_loading
-            or self.parameters_full.use_horovod
         ):
             do_shuffle = False
 
@@ -2278,10 +2181,6 @@ class TrainerGNN(RunnerGraph):
         )
 
         # Next, we save all the other objects.
-
-        if self.parameters_full.use_horovod:
-            if hvd.rank() != 0:
-                return
         if self.encoder_scheduler is None and self.decoder_scheduler is None:
             save_dict = {
                 "epoch": self.last_epoch,
