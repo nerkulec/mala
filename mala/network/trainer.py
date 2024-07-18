@@ -105,7 +105,7 @@ class TrainerMLP(RunnerMLP):
                 self.full_logging_path = os.path.join(
                     self.parameters.logging_dir, name
                 )
-                os.makedirs(self.full_logging_path)
+                os.makedirs(self.full_logging_path, exist_ok=True)
             else:
                 self.full_logging_path = self.parameters.logging_dir
 
@@ -501,7 +501,7 @@ class TrainerMLP(RunnerMLP):
                             step=total_batch_id,
                         )
 
-            if self.parameters._configuration["gpu"] > 0:
+            if self.parameters._configuration["gpu"]:
                 torch.cuda.synchronize(
                     self.parameters._configuration["device"]
                 )
@@ -1039,10 +1039,11 @@ class TrainerMLP(RunnerMLP):
         )
 
     @staticmethod
-    def __average_validation(val, name):
+    def __average_validation(val, name, device="cpu"):
         """Average validation over multiple parallel processes."""
-        tensor = torch.tensor(val)
-        avg_loss = hvd.allreduce(tensor, name=name, op=hvd.Average)
+        tensor = torch.tensor(val, device=device)
+        dist.all_reduce(tensor)
+        avg_loss = tensor / dist.get_world_size()
         return avg_loss.item()
 
 
