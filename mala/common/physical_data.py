@@ -356,6 +356,8 @@ class PhysicalData(ABC):
         array : numpy.ndarray
             Array to save.
         """
+        directory = os.path.dirname(path)
+        os.makedirs(directory, exist_ok=True)
         np.save(path, array)
 
     class SkipArrayWriting:
